@@ -187,3 +187,42 @@ def test_server_side_download_errors_are_infra():
                          classify_console=True, client=client)
     got = classes(c.collect())
     assert got[5][0] == "infra" and got[4][0] == "code"   # a 404 is a bad URL, not flaky infrastructure
+
+
+def test_breadcrumb_names_the_failed_packages():
+    from rhd.collectors.jenkins import breadcrumb
+
+    summary = "Summary: 306 packages finished [1h 1min]\n  1 package failed: ros2_transport\n  3 packages had stderr output: a b c"
+    assert breadcrumb(summary) == "build failed: ros2_transport"
+    assert breadcrumb("  5 packages failed: a b c d e") == "build failed: a, b, c (+2 more)"
+    # no summary (cut off): fall back to the per-package failure lines, deduplicated
+    assert breadcrumb("Failed   <<< ros2_transport [ 16.2s, exited with code 2 ]\nFailed   <<< ros2_transport [x]") \
+        == "build failed: ros2_transport"
+    assert breadcrumb("colcon test: 3 tests failed") == ""
+
+
+def test_real_failures_get_a_breadcrumb_and_oom_is_infra():
+    oom = ("c++: fatal error: Killed signal terminated program cc1plus\n"
+           "Failed   <<< ros2_transport [ 3min, exited with code 2 ]\n  1 package failed: ros2_transport")
+    plain = "error: expected ';'\nFailed   <<< ros2_transport [ 3min, exited with code 2 ]\n  1 package failed: ros2_transport"
+    client = failing_job_client({5: oom, 4: plain, 3: "x", 1: "x"})
+    c = JenkinsCollector(label="ci.example", base_url="x", user_env="U", token_env="T", match="^nightly_",
+                         classify_console=True, client=client)
+    got = classes(c.collect())
+    assert got[5] == ("infra", "out of memory; build failed: ros2_transport")
+    assert got[4] == ("code", "build failed: ros2_transport")
+
+
+def test_breadcrumb_shows_in_the_cell_and_the_streak_alert(tmp_path):
+    from rhd.alerts import evaluate
+
+    store = SqliteStore(str(tmp_path / "t.db"))
+    now = int(time.time())
+    builds = [Build("ci.ros2.org", "nightly", "nightly_a", n, now - (4 - n) * 3600 * 20, "FAILURE", 3600,
+                    f"https://ci.ros2.org/job/nightly_a/{n}/") for n in (1, 2, 3)]
+    store.write(0, [*builds, *[BuildClass(b.server, b.job, b.number, b.ts, "code", "build failed: ros2_transport")
+                               for b in builds]])
+    text = render(store, str(tmp_path / "site")).read_text()
+    assert "FAILURE #3 · 1h00m · build failed: ros2_transport" in text
+    streak = next(a for a in evaluate(store, now) if "in a row" in a.title)
+    assert "build failed: ros2_transport" in streak.detail

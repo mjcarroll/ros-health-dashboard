@@ -222,6 +222,8 @@ def _cell(builds: list[dict]) -> str:
         tests = f" · {b['fail']} failed / {b['total']} tests"
     title = f"{'INFRA FAILURE (' + (b.get('reason') or 'infrastructure') + ')' if infra else b['result']} " \
             f"#{b['number']}{tests} · {_duration(b['duration_s'])}"
+    if b.get("kind") == "code" and b.get("reason"):  # why a real failure failed, when the console said
+        title += f" · {b['reason']}"
     if len(builds) > 1:
         title += f" · {len(builds)} builds that day"
     extra = f"<sup>{len(builds)}</sup>" if len(builds) > 1 else ""

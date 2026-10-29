@@ -77,7 +77,7 @@ def _rosdistro(store, now, t) -> list[Alert]:
 def _nightlies(store, now, t) -> list[Alert]:
     jobs: dict[tuple, list[dict]] = {}
     for r in store.query(
-        "SELECT b.server, b.grp, b.job, b.number, b.ts, b.result, b.url, c.kind FROM build b "
+        "SELECT b.server, b.grp, b.job, b.number, b.ts, b.result, b.url, c.kind, c.reason FROM build b "
         "LEFT JOIN build_class c USING (server, job, number) ORDER BY b.server, b.job, b.ts"):
         jobs.setdefault((r["server"], r["grp"], r["job"]), []).append(r)
     out = []
@@ -94,8 +94,10 @@ def _nightlies(store, now, t) -> list[Alert]:
                 break
             streak += 1
         if lvl := _level(streak, t.nightly_consecutive_failures_warn, t.nightly_consecutive_failures_bad):
-            out.append(Alert(lvl, tab, f"{job} failed {streak} builds in a row", server, builds[-1]["url"],
-                             f"streak:{server}:{job}"))
+            why = next((b["reason"] for b in reversed(done)
+                        if b["result"] == "FAILURE" and b["kind"] == "code" and b["reason"]), "")
+            out.append(Alert(lvl, tab, f"{job} failed {streak} builds in a row",
+                             f"{server} · {why}" if why else server, builds[-1]["url"], f"streak:{server}:{job}"))
 
         if len(builds) >= 3:
             recent = [b["ts"] for b in builds[-10:]]

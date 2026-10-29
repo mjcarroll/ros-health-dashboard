@@ -37,9 +37,26 @@ INFRA_PATTERNS = [
     (r"was marked offline|Agent went offline during the build|was removed|Remote call on .* failed|"
      r"Unable to create live FilePath", "agent lost"),
     (r"[Nn]o space left on device", "disk full"),
+    (r"Killed signal terminated program|internal compiler error: Killed|virtual memory exhausted|"
+     r"std::bad_alloc|Cannot allocate memory", "out of memory"),
     (r"Cannot connect to the Docker daemon|docker: Error response from daemon", "docker daemon error"),
     (r"Could not resolve host|Temporary failure in name resolution|UnknownHostException", "network/DNS failure"),
 ]
+
+
+# colcon's end-of-build summary ("  1 package failed: ros2_transport") and per-package failure lines.
+_FAILED_SUMMARY = re.compile(r"\d+ packages? failed:[ \t]*([^\n]+)")
+_FAILED_LINE = re.compile(r"Failed\s+<<<\s+(\S+)")
+
+
+def breadcrumb(console_tail: str) -> str:
+    """Which package(s) failed to build, as a short phrase; empty when the console does not say."""
+    found = _FAILED_SUMMARY.findall(console_tail)
+    names = found[-1].split() if found else list(dict.fromkeys(_FAILED_LINE.findall(console_tail)))
+    if not names:
+        return ""
+    more = f" (+{len(names) - 3} more)" if len(names) > 3 else ""
+    return f"build failed: {', '.join(names[:3])}{more}"
 
 
 def _executing_ms(actions: list[dict]) -> int | None:
@@ -109,10 +126,11 @@ class JenkinsCollector:
         tail = self.client.console_tail(b.job, b.number)
         if tail is None:
             return BuildClass(b.server, b.job, b.number, b.ts, "unknown", "console size unavailable")
+        crumb = breadcrumb(tail)
         for pattern, reason in self.patterns:
             if pattern.search(tail):
-                return BuildClass(b.server, b.job, b.number, b.ts, "infra", reason)
-        return BuildClass(b.server, b.job, b.number, b.ts, "code")
+                return BuildClass(b.server, b.job, b.number, b.ts, "infra", f"{reason}; {crumb}" if crumb else reason)
+        return BuildClass(b.server, b.job, b.number, b.ts, "code", crumb)
 
     def _failing_tests(self, b: Build) -> TestFailures | None:
         text = self.client.text(FAILED_CASES.format(job=b.job, number=b.number))
