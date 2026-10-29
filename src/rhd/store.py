@@ -5,23 +5,38 @@ import urllib.request
 from pathlib import Path
 from typing import Protocol
 
-from .models import Observation
+from .models import Build, Observation
 
 SCHEMA_DIR = Path(__file__).resolve().parents[2] / "schema"
 
-INSERT = (
+INSERT_OBSERVATION = (
     "INSERT OR REPLACE INTO observation (ts, source, metric, labels, value) "
     "VALUES (?, ?, ?, ?, ?)"
+)
+INSERT_BUILD = (
+    "INSERT OR REPLACE INTO build (server, grp, job, number, ts, result, duration_s, "
+    "fail, skip, total, url) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
 )
 
 
 class Store(Protocol):
-    def write(self, ts: int, observations: list[Observation]) -> None: ...
+    def write(self, ts: int, records: list[Observation | Build]) -> None: ...
     def query(self, sql: str, params: list | None = None) -> list[dict]: ...
 
 
 def _migrations() -> list[str]:
     return [p.read_text() for p in sorted(SCHEMA_DIR.glob("*.sql"))]
+
+
+def statements(ts: int, records: list[Observation | Build]) -> list[tuple[str, list]]:
+    out = []
+    for r in records:
+        if isinstance(r, Build):
+            out.append((INSERT_BUILD, [r.server, r.grp, r.job, r.number, r.ts, r.result,
+                                       r.duration_s, r.fail, r.skip, r.total, r.url]))
+        else:
+            out.append((INSERT_OBSERVATION, [ts, r.source, r.metric, r.labels_json, r.value]))
+    return out
 
 
 class SqliteStore:
@@ -31,10 +46,9 @@ class SqliteStore:
         for sql in _migrations():
             self.db.executescript(sql)
 
-    def write(self, ts, observations):
-        self.db.executemany(
-            INSERT, [(ts, o.source, o.metric, o.labels_json, o.value) for o in observations]
-        )
+    def write(self, ts, records):
+        for sql, params in statements(ts, records):
+            self.db.execute(sql, params)
         self.db.commit()
 
     def query(self, sql, params=None):
@@ -65,9 +79,9 @@ class D1Store:
             raise RuntimeError(f"D1 error: {body.get('errors')}")
         return body["result"][0].get("results", [])
 
-    def write(self, ts, observations):
-        for o in observations:
-            self._post(INSERT, [ts, o.source, o.metric, o.labels_json, o.value])
+    def write(self, ts, records):
+        for sql, params in statements(ts, records):
+            self._post(sql, params)
 
     def query(self, sql, params=None):
         return self._post(sql, params or [])

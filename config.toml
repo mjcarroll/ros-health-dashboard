@@ -4,3 +4,22 @@
 [[collectors]]
 type = "rosdistro"
 repo = "ros/rosdistro"
+
+[[collectors]]
+type = "jenkins"
+label = "ci.ros2.org"
+base_url = "https://ci.ros2.org"
+user_env = "JENKINS_CI_USER"
+token_env = "JENKINS_CI_TOKEN"
+group = "nightly"
+match = "^nightly_"
+
+# The Rci/Lci/Kci/Jci/Hci views are the per-distro ROS CI jobs.
+[[collectors]]
+type = "jenkins"
+label = "build.ros2.org"
+base_url = "https://build.ros2.org"
+user_env = "JENKINS_BUILD_USER"
+token_env = "JENKINS_BUILD_TOKEN"
+views = ["Rci", "Lci", "Kci", "Jci", "Hci"]
+match = "nightly"

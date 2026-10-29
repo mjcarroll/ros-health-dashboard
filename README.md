@@ -14,6 +14,7 @@ Top-line health dashboard for the ROS 2 project. It answers "is the project heal
 - **Storage**: Cloudflare D1 (SQLite). Only top-line rollups go here, never raw logs or per-test history. Schema is a generic `observation(ts, source, metric, labels_json, value)` table plus a small number of current-state tables.
 - **Dashboard**: static site rendered from D1 by the workflow and published to Pages/Cloudflare. No Grafana.
 - **Secrets** (Actions): `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`, optionally a GitHub PAT (the built-in `GITHUB_TOKEN` is enough for public reads of `ros/rosdistro`).
+- Nightly matrix: the `jenkins` collector stores one `build` row per recent build (not per-test data) so the page can draw job × day cells that link back to Jenkins. Needs read-only Jenkins API tokens for both servers (`JENKINS_CI_*`, `JENKINS_BUILD_*`).
 - Jenkins collection logic is reused from the `ci-observability` branch of `mjcarroll/ros2` (`export.py`, `buildfarm.py`, `github.py`), copied rather than depended on.
 
 ## Status
@@ -32,4 +33,4 @@ Adding a collector: write a class with `name` and `collect() -> list[Observation
 
 ## Deploy (not done yet)
 
-D1 database `ros-health` exists and Actions secrets are set (`CLOUDFLARE_API_TOKEN` D1-edit, `CLOUDFLARE_ACCOUNT_ID`, `D1_DATABASE_ID`); schema applied with `wrangler d1 execute ros-health --remote --file schema/0001_init.sql`. the site is deployed to GitHub Pages by the `deploy` job. `D1Store` verified end to end (first CI run wrote 9 rosdistro rows).
+D1 database `ros-health` exists and Actions secrets are set (`CLOUDFLARE_API_TOKEN` D1-edit, `CLOUDFLARE_ACCOUNT_ID`, `D1_DATABASE_ID`) plus `JENKINS_CI_USER/TOKEN` and `JENKINS_BUILD_USER/TOKEN`; schema applied with `wrangler d1 execute ros-health --remote --file schema/0001_init.sql`. the site is deployed to GitHub Pages by the `deploy` job. `D1Store` verified end to end (first CI run wrote 9 rosdistro rows).

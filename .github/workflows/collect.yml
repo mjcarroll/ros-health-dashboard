@@ -31,6 +31,10 @@ jobs:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
       D1_DATABASE_ID: ${{ secrets.D1_DATABASE_ID }}
+      JENKINS_CI_USER: ${{ secrets.JENKINS_CI_USER }}
+      JENKINS_CI_TOKEN: ${{ secrets.JENKINS_CI_TOKEN }}
+      JENKINS_BUILD_USER: ${{ secrets.JENKINS_BUILD_USER }}
+      JENKINS_BUILD_TOKEN: ${{ secrets.JENKINS_BUILD_TOKEN }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5

@@ -1,6 +1,6 @@
 from typing import Protocol
 
-from ..models import Observation
+from ..models import Build, Observation
 
 
 class Collector(Protocol):
@@ -9,14 +9,15 @@ class Collector(Protocol):
 
     name: str
 
-    def collect(self) -> list[Observation]: ...
+    def collect(self) -> list[Observation | Build]: ...
 
 
 def _registry() -> dict[str, type]:
     # Imported lazily so a collector's dependencies load only when enabled.
+    from .jenkins import JenkinsCollector
     from .rosdistro import RosdistroCollector
 
-    return {"rosdistro": RosdistroCollector}
+    return {"rosdistro": RosdistroCollector, "jenkins": JenkinsCollector}
 
 
 def build_collectors(entries: list[dict]) -> list[Collector]:
