@@ -5,6 +5,11 @@
 type = "rosdistro"
 repo = "ros/rosdistro"
 
+# Open PRs and issues of other repos. Add an entry per repo to cover more of the ros2 org.
+[[collectors]]
+type = "github_repo"
+repo = "ros2-gbp/ros2-gbp-github-org"
+
 [[collectors]]
 type = "jenkins"
 label = "ci.ros2.org"

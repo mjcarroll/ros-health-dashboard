@@ -52,8 +52,12 @@ def unchanged_filtered(store, records):
     return [r for r in records if not (isinstance(r, Build) and stored.get(r.key) == r.state)]
 
 
-def collect(config: str, db: str) -> int:
+def collect(config: str, db: str, only: list[str] | None = None) -> int:
     entries = load_config(config).get("collectors", [])
+    if only:
+        entries = [e for e in entries if e["type"] in only]
+        if not entries:
+            raise SystemExit(f"no configured collectors of type {only}")
     store = open_store(db)
     ts = int(time.time())
     failed = 0
@@ -83,6 +87,7 @@ def main(argv: list[str] | None = None) -> int:
     sub = p.add_subparsers(dest="cmd", required=True)
     c = sub.add_parser("collect")
     c.add_argument("--config", default="config.toml")
+    c.add_argument("--only", help="comma-separated collector types to run (e.g. github_repo,rosdistro)")
     r = sub.add_parser("render")
     r.add_argument("--out", default="site")
     r.add_argument("--config", default="config.toml")
@@ -91,7 +96,7 @@ def main(argv: list[str] | None = None) -> int:
     args = p.parse_args(argv)
 
     if args.cmd == "collect":
-        return collect(args.config, args.db)
+        return collect(args.config, args.db, args.only.split(",") if args.only else None)
     thresholds = Thresholds.from_config(load_config(args.config).get("alerts"))
     store = open_store(args.db)
     if args.cmd == "alerts":

@@ -37,7 +37,8 @@ def _ts(s: str) -> datetime:
 def _pages(query: str, owner: str, name: str):
     after = None
     while True:
-        conn = graphql(query, {"owner": owner, "name": name, "after": after})["repository"]["pullRequests"]
+        repository = graphql(query, {"owner": owner, "name": name, "after": after})["repository"]
+        conn = next(iter(repository.values()))  # the one connection the query asked for (PRs or issues)
         yield from conn["nodes"]
         if not conn["pageInfo"]["hasNextPage"]:
             return

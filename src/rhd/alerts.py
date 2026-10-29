@@ -61,14 +61,14 @@ def _rosdistro(store, now, t) -> list[Alert]:
     days = latest.get("days_since_last_merge")
     if days is not None and (lvl := _level(days, t.rosdistro_days_since_merge_warn,
                                            t.rosdistro_days_since_merge_bad)):
-        out.append(Alert(lvl, "rosdistro", "rosdistro has stopped merging",
+        out.append(Alert(lvl, "github", "rosdistro has stopped merging",
                          f"last merge {days:.1f} days ago", "https://github.com/ros/rosdistro/pulls?q=is%3Amerged",
                          "rosdistro:stopped"))
     if "merged_7d" in latest and latest.get("merged_30d"):
         weekly = latest["merged_30d"] * 7 / 30
         ratio = latest["merged_7d"] / weekly
         if lvl := _level(ratio, t.rosdistro_merge_rate_warn, t.rosdistro_merge_rate_bad, False):
-            out.append(Alert(lvl, "rosdistro", "rosdistro merge rate is down",
+            out.append(Alert(lvl, "github", "rosdistro merge rate is down",
                              f"{latest['merged_7d']:.0f} merged in 7 days vs a {weekly:.0f}/week average",
                              "https://github.com/ros/rosdistro/pulls?q=is%3Amerged", "rosdistro:rate"))
     return out

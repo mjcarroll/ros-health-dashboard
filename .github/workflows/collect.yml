@@ -9,6 +9,10 @@ on:
         description: "Collect from Jenkins/GitHub first (untick to only re-render and deploy)"
         type: boolean
         default: true
+      only:
+        description: "Only run these collector types (comma-separated, e.g. github_repo); empty = all"
+        type: string
+        default: ""
   push:
     branches: [master]
 
@@ -46,8 +50,10 @@ jobs:
         with:
           python-version: "3.13"
       - run: pip install -e .
-      - run: rhd collect
+      - run: rhd collect ${ONLY:+--only "$ONLY"}
         if: github.event.inputs.collect != 'false'
+        env:
+          ONLY: ${{ github.event.inputs.only }}
       - run: rhd render --out site
       - uses: actions/upload-pages-artifact@v3
         with:

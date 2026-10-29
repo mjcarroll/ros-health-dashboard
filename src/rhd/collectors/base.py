@@ -14,12 +14,14 @@ class Collector(Protocol):
 
 def _registry() -> dict[str, type]:
     # Imported lazily so a collector's dependencies load only when enabled.
+    from .github_repo import GithubRepoCollector
     from .jenkins import JenkinsCollector
     from .repo_status import RepoStatusCollector
     from .rosdistro import RosdistroCollector
 
     return {
         "rosdistro": RosdistroCollector,
+        "github_repo": GithubRepoCollector,
         "jenkins": JenkinsCollector,
         "repo_status": RepoStatusCollector,
     }

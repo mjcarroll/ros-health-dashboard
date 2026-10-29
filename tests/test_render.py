@@ -26,7 +26,7 @@ def test_tab_order_is_importance_order(tmp_path):
                  b("ci.ros2.org", "nightly", "n", 1, 1), b("build.ros2.org", "Lci", "l", 1, 1)],
                 [Observation("rosdistro", "open_prs", 4)])
     labels = re.findall(r'<a role="tab" href="#[^"]+">([^<]+)', text)
-    assert labels == ["ci.ros2.org", "Rolling (Rci)", "Lyrical (Lci)", "Kilted (Kci)", "rosdistro"]
+    assert labels == ["ci.ros2.org", "Rolling (Rci)", "Lyrical (Lci)", "Kilted (Kci)", "GitHub"]
 
 
 def test_sparse_section_shows_only_days_with_builds(tmp_path):
@@ -157,3 +157,18 @@ def test_dismissal_script_is_valid_javascript(tmp_path):
             f = tmp_path / f"s{i}.js"
             f.write_text(src)
             assert subprocess.run([node, "--check", str(f)], capture_output=True).returncode == 0, src[:80]
+
+
+def test_github_tab_puts_rosdistro_and_other_repos_side_by_side(tmp_path):
+    obs = [Observation("rosdistro", "open_prs", 4), Observation("rosdistro", "open_prs_unreviewed", 1)]
+    gbp = "ros2-gbp/ros2-gbp-github-org"
+    obs += [Observation(gbp, m, v) for m, v in [("open_prs", 6), ("open_issues", 12), ("open_issues_no_reply", 3),
+                                                 ("issues_closed_30d", 9), ("open_issue_age_max_days", 200)]]
+    text = page(tmp_path, [], obs)
+    tab = text[text.index('id="github"'):text.index("</section>", text.index('id="github"'))]
+    assert tab.index("ros/rosdistro") < tab.index(gbp)                      # rosdistro first
+    assert f'href="https://github.com/{gbp}/issues?q=is%3Aissue+is%3Aopen"' in tab
+    assert f'href="https://github.com/{gbp}/issues?q=is%3Aissue+is%3Aopen+comments%3A0"' in tab
+    assert f'href="https://github.com/{gbp}/pulls?q=is%3Apr+is%3Aopen"' in tab
+    assert 'href="https://github.com/ros/rosdistro/pulls?q=is%3Apr+is%3Aopen"' in tab
+    assert text.count('id="github"') == 1 and 'href="#rosdistro"' not in text

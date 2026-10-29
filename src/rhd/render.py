@@ -448,8 +448,8 @@ def _tests(store: Store, server: str, now: float, limit: int = 60) -> str:
 ROSDISTRO_REPO = "ros/rosdistro"
 
 
-def _gh(query: str) -> str:
-    return f"https://github.com/{ROSDISTRO_REPO}/pulls?q=" + urllib.parse.quote_plus(query)
+def _gh(repo: str, query: str, kind: str = "pulls") -> str:
+    return f"https://github.com/{repo}/{kind}?q=" + urllib.parse.quote_plus(query)
 
 
 def _dur(days: float) -> str:
@@ -460,48 +460,58 @@ def _dur(days: float) -> str:
     return f"{days:.1f} d" if days < 10 else f"{days:.0f} d"
 
 
-def _rosdistro(rows: list[dict], now: float, t: Thresholds) -> str:
+def _queue(repo: str, rows: list[dict], now: float, t: Thresholds, flag_stale: bool = False) -> str:
+    """Open PR (and, where collected, issue) health of one GitHub repo; every number links to the
+    matching GitHub search."""
     series: dict[str, list[tuple[int, float]]] = defaultdict(list)
     for r in rows:
         series[r["metric"]].append((r["ts"], r["value"]))
     latest = {m: pts[-1][1] for m, pts in series.items()}
     day = lambda n: (datetime.fromtimestamp(now, timezone.utc) - timedelta(days=n)).strftime("%Y-%m-%d")
-    open_q = "is:pr is:open"
-    oldest_q = "is:pr is:open sort:created-asc"
+    pr = lambda q: _gh(repo, q)
+    issue = lambda q: _gh(repo, q, "issues")
+    oldest_pr = "is:pr is:open sort:created-asc"
+    oldest_issue = "is:issue is:open sort:created-asc"
 
     days = latest.get("days_since_last_merge")
     stale = ("bad" if days >= t.rosdistro_days_since_merge_bad else
-             "warn" if days >= t.rosdistro_days_since_merge_warn else "") if days is not None else ""
-    tiles = [  # (metric, label, text, query, severity)
-        ("open_prs", "open PRs", None, open_q, ""),
-        ("open_prs_unreviewed", "open, no review or comment", None,
-         "is:pr is:open draft:false review:none comments:0", ""),
-        ("merged_7d", "merged in 7 days", None, f"is:pr is:merged merged:>={day(7)}", ""),
-        ("merged_30d", "merged in 30 days", None, f"is:pr is:merged merged:>={day(30)}", ""),
-        ("days_since_last_merge", "since last merge", _dur, "is:pr is:merged sort:updated-desc", stale),
+             "warn" if days >= t.rosdistro_days_since_merge_warn else "") if flag_stale and days is not None else ""
+    tiles = [  # (metric, label, formatter, url, severity)
+        ("open_prs", "open PRs", None, pr("is:pr is:open"), ""),
+        ("open_prs_unreviewed", "open PRs, no review or comment", None,
+         pr("is:pr is:open draft:false review:none comments:0"), ""),
+        ("merged_7d", "PRs merged in 7 days", None, pr(f"is:pr is:merged merged:>={day(7)}"), ""),
+        ("merged_30d", "PRs merged in 30 days", None, pr(f"is:pr is:merged merged:>={day(30)}"), ""),
+        ("days_since_last_merge", "since last merge", _dur, pr("is:pr is:merged sort:updated-desc"), stale),
+        ("open_issues", "open issues", None, issue("is:issue is:open"), ""),
+        ("open_issues_no_reply", "open issues, no reply", None, issue("is:issue is:open comments:0"), ""),
+        ("issues_opened_7d", "issues opened in 7 days", None, issue(f"is:issue created:>={day(7)}"), ""),
+        ("issues_closed_7d", "issues closed in 7 days", None, issue(f"is:issue is:closed closed:>={day(7)}"), ""),
+        ("issues_closed_30d", "issues closed in 30 days", None, issue(f"is:issue is:closed closed:>={day(30)}"), ""),
     ]
     out = []
-    for metric, label, fmt, query, sev in tiles:
+    for metric, label, fmt, url, sev in tiles:
         if metric not in latest:
             continue
         value = fmt(latest[metric]) if fmt else _fmt(latest[metric])
-        out.append(f'<a class="tile {sev}" href="{html.escape(_gh(query))}"><span class="n">{value}</span>'
+        out.append(f'<a class="tile {sev}" href="{html.escape(url)}"><span class="n">{value}</span>'
                    f'<span class="l">{label}</span>{_spark(series[metric], 200)}</a>')
 
     facts = []
-    for metric, label, query in [
-        ("open_pr_age_p50_days", "Median open PR age", oldest_q),
-        ("open_pr_age_p90_days", "90th percentile open PR age", oldest_q),
-        ("open_pr_age_max_days", "Oldest open PR", oldest_q),
-        ("time_to_merge_p50_days", "Median time to merge (last 30 days)", f"is:pr is:merged merged:>={day(30)}"),
+    for metric, label, url in [
+        ("open_pr_age_p50_days", "Median open PR age", pr(oldest_pr)),
+        ("open_pr_age_p90_days", "90th percentile open PR age", pr(oldest_pr)),
+        ("open_pr_age_max_days", "Oldest open PR", pr(oldest_pr)),
+        ("time_to_merge_p50_days", "Median PR time to merge (last 30 days)", pr(f"is:pr is:merged merged:>={day(30)}")),
+        ("open_issue_age_p50_days", "Median open issue age", issue(oldest_issue)),
+        ("open_issue_age_p90_days", "90th percentile open issue age", issue(oldest_issue)),
+        ("open_issue_age_max_days", "Oldest open issue", issue(oldest_issue)),
     ]:
         if metric in latest:
-            facts.append(f"<tr><td>{label}</td><td class=\"v\"><a href=\"{html.escape(_gh(query))}\">"
+            facts.append(f"<tr><td>{label}</td><td class=\"v\"><a href=\"{html.escape(url)}\">"
                          f"{_dur(latest[metric])}</a></td></tr>")
-    return (f'<div class="tiles">{"".join(out)}</div>'
-            f'<table class="facts">{"".join(facts)}</table>'
-            f'<p class="muted">Tiles and values link to the matching search on github.com/{ROSDISTRO_REPO}. '
-            f"Trend lines cover the last {WINDOW_DAYS} days.</p>")
+    return (f'<h3><a href="https://github.com/{repo}">{html.escape(repo)}</a></h3>'
+            f'<div class="tiles">{"".join(out)}</div><table class="facts">{"".join(facts)}</table>')
 
 
 def _tab(slug: str, label: str, content: str, failing: int = 0) -> tuple[str, str]:
@@ -554,10 +564,19 @@ def render(store: Store, out_dir: str, thresholds: Thresholds | None = None) -> 
         "ORDER BY source, metric, labels, ts", [int(now) - WINDOW_DAYS * 86400]):
         if r["source"] != "repo_status":  # drawn per distro above
             by_source[r["source"]].append(r)
+
+    # rosdistro first, then every other GitHub repo ("owner/name") that is being tracked.
+    repos = [s_ for s_ in by_source if s_ == "rosdistro" or "/" in s_]
+    repos.sort(key=lambda s_: (s_ != "rosdistro", s_))
+    if repos:
+        body = "".join(
+            _queue(ROSDISTRO_REPO if src == "rosdistro" else src, by_source.pop(src), now, thresholds,
+                   flag_stale=src == "rosdistro") for src in repos)
+        body += (f'<p class="muted">Tiles and values link to the matching search on github.com. '
+                 f"Trend lines cover the last {WINDOW_DAYS} days.</p>")
+        tabs.append(_tab("github", "GitHub", body))
     for source, rows in sorted(by_source.items()):
-        body = (_rosdistro(rows, now, thresholds) if source == "rosdistro"
-                else f'<p class="muted">Last {WINDOW_DAYS} days.</p>' + _generic(rows))
-        tabs.append(_tab(source, source, body))
+        tabs.append(_tab(source, source, f'<p class="muted">Last {WINDOW_DAYS} days.</p>' + _generic(rows)))
 
     page = PAGE.replace("%UPDATED%", time.strftime("%Y-%m-%d %H:%M", time.gmtime())).replace(
         "%TABS%", "".join(t[0] for t in tabs)).replace(
