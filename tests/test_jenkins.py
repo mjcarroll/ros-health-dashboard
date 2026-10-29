@@ -116,14 +116,15 @@ def classes(records):
 
 def test_console_patterns_classify_failures():
     client = failing_job_client({
-        5: "...at hudson.tasks.MailSender.run\nCaused by: java.net.ConnectException: Connection refused",
+        5: "curl: (7) Failed to connect to raw.githubusercontent.com port 443\nBuild step failed\n"
+           "at hudson.tasks.MailSender.run\nCaused by: java.net.ConnectException: Connection refused",
         4: "colcon test failed: 3 tests failed",
         3: None,  # console size unavailable: never download the whole log
     })
     c = JenkinsCollector(label="ci.example", base_url="x", user_env="U", token_env="T", match="^nightly_",
                          classify_console=True, client=client)
     got = classes(c.collect())
-    assert got[5] == ("infra", "mail server unreachable")
+    assert got[5] == ("infra", "download failed (curl network error)")
     assert got[4] == ("code", "")
     assert got[3][0] == "unknown"
     assert got[2] == ("infra", "agent lost (no executor time)")  # from the JSON, no console needed
@@ -167,3 +168,22 @@ def test_failing_tests_section_starts_collapsed(tmp_path):
     section = text[text.index("Failing tests"):]
     assert section.startswith("Failing tests</h3><details><summary>") and "<details open" not in text
     assert "pkg.TestA" in section and "does_a_thing" in section
+
+
+def test_a_mailer_stack_trace_alone_is_not_an_infra_failure():
+    # Every failed build tries to send mail, so with SMTP down this trace ends every failing console.
+    mail_noise = ("colcon test: 3 tests failed\nat hudson.tasks.MailSender.run(MailSender.java:131)\n"
+                  "Caused by: java.net.ConnectException: Connection refused\nFinished: FAILURE")
+    client = failing_job_client({5: mail_noise, 4: mail_noise, 3: mail_noise, 1: mail_noise})
+    c = JenkinsCollector(label="ci.example", base_url="x", user_env="U", token_env="T", match="^nightly_",
+                         classify_console=True, client=client)
+    assert classes(c.collect())[5] == ("code", "")
+
+
+def test_server_side_download_errors_are_infra():
+    client = failing_job_client({5: "curl: (22) The requested URL returned error: 503", 4: "curl: (22) The requested URL "
+                                 "returned error: 404", 3: "x", 1: "x"})
+    c = JenkinsCollector(label="ci.example", base_url="x", user_env="U", token_env="T", match="^nightly_",
+                         classify_console=True, client=client)
+    got = classes(c.collect())
+    assert got[5][0] == "infra" and got[4][0] == "code"   # a 404 is a bad URL, not flaky infrastructure

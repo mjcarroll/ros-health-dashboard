@@ -27,7 +27,11 @@ FAILED_CASES = ("/job/{job}/{number}/testReport/api/xml"
 # Well-known Jenkins/infrastructure failure signatures, matched against the end of the console.
 # Anything that matches none of these is treated as a real failure. Extend via `infra_patterns`.
 INFRA_PATTERNS = [
-    (r"MailSender|Could not connect to SMTP host|SMTPTransport", "mail server unreachable"),
+    # Deliberately no mail signature: Jenkins mails every failed build, so an unreachable SMTP server
+    # puts a MailSender stack trace at the end of *every* failing console and says nothing about
+    # why the build failed (nightly_linux-rhel_release #2863 really failed fetching ros2.repos).
+    (r"curl: \((?:6|7|18|28|35|52|55|56)\)", "download failed (curl network error)"),
+    (r"curl: \(22\) The requested URL returned error: 5\d\d", "download failed (server error)"),
     (r"ChannelClosedException|Channel is already closed|Connection was broken|ClosedChannelException",
      "agent connection lost"),
     (r"was marked offline|Agent went offline during the build|was removed|Remote call on .* failed|"

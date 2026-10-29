@@ -38,7 +38,7 @@ class Jenkins:
         """Response headers (lowercased) from a HEAD request, without downloading a body."""
         return self._fetch(path, "HEAD")[0]
 
-    def console_tail(self, job: str, number: int, nbytes: int = 12000) -> str | None:
+    def console_tail(self, job: str, number: int, nbytes: int = 40000) -> str | None:
         """The last nbytes of a build's console. Consoles run to tens of MB, so the size comes from a
         header-only request first; if it is unavailable, give up rather than download the whole log."""
         base = f"/job/{job}/{number}/logText/progressiveText"
