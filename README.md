@@ -32,4 +32,4 @@ Adding a collector: write a class with `name` and `collect() -> list[Observation
 
 ## Deploy (not done yet)
 
-D1 database `ros-health` exists and Actions secrets are set (`CLOUDFLARE_API_TOKEN` D1-edit, `CLOUDFLARE_ACCOUNT_ID`, `D1_DATABASE_ID`); schema applied with `wrangler d1 execute ros-health --remote --file schema/0001_init.sql`. The workflow uploads the rendered site as an artifact; publishing target is undecided. `D1Store` verified end to end (first CI run wrote 9 rosdistro rows).
+D1 database `ros-health` exists and Actions secrets are set (`CLOUDFLARE_API_TOKEN` D1-edit, `CLOUDFLARE_ACCOUNT_ID`, `D1_DATABASE_ID`); schema applied with `wrangler d1 execute ros-health --remote --file schema/0001_init.sql`. the site is deployed to GitHub Pages by the `deploy` job. `D1Store` verified end to end (first CI run wrote 9 rosdistro rows).
