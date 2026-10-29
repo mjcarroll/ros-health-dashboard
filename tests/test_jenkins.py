@@ -151,3 +151,19 @@ def test_custom_patterns_extend_the_defaults():
     c = JenkinsCollector(label="ci.example", base_url="x", user_env="U", token_env="T", match="^nightly_",
                          classify_console=True, infra_patterns=["license server"], client=client)
     assert classes(c.collect())[5][0] == "infra"
+
+
+def test_failing_tests_section_starts_collapsed(tmp_path):
+    from rhd.models import TestFailures
+
+    store = SqliteStore(str(tmp_path / "t.db"))
+    now = int(time.time())
+    build = Build("ci.ros2.org", "nightly", "nightly_a", 7, now - 3600, "UNSTABLE", 3600,
+                  "https://ci.ros2.org/job/nightly_a/7/", fail=1, skip=0, total=10)
+    store.write(0, [build, TestFailures(build.server, build.job, build.number, build.ts,
+                                        [("pkg.TestA", "does_a_thing", 1, 7)])])
+    text = render(store, str(tmp_path / "site")).read_text()
+    assert "1 tests failed in the last 14 days: 0 failing, 1 new, 0 flaky" in text
+    section = text[text.index("Failing tests"):]
+    assert section.startswith("Failing tests</h3><details><summary>") and "<details open" not in text
+    assert "pkg.TestA" in section and "does_a_thing" in section

@@ -352,7 +352,10 @@ def _tests(store: Store, server: str, now: float, limit: int = 60) -> str:
             f"{len(rows)} distinct tests{', showing ' + str(limit) if len(rows) > limit else ''}.</p>")
     body = f'<div class="scroll"><table class="tests">{head}{"".join(trs)}</table></div>' if trs else \
         '<p class="ok-note">No failing tests in the fetched builds.</p>'
-    return f"<h3>Failing tests</h3>{note}{body}"
+    counts = {k: sum(1 for _, t in rows if t["kind"] == k) for k in ("failing", "new", "flaky")}
+    summary = (f"{len(rows)} tests failed in the last {MATRIX_DAYS} days: "
+               f"{counts['failing']} failing, {counts['new']} new, {counts['flaky']} flaky")
+    return f"<h3>Failing tests</h3><details><summary>{summary}</summary>{note}{body}</details>"
 
 
 ROSDISTRO_REPO = "ros/rosdistro"

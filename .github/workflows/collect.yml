@@ -4,6 +4,11 @@ on:
   schedule:
     - cron: "17 * * * *"
   workflow_dispatch:
+    inputs:
+      collect:
+        description: "Collect from Jenkins/GitHub first (untick to only re-render and deploy)"
+        type: boolean
+        default: true
   push:
     branches: [master]
 
@@ -42,6 +47,7 @@ jobs:
           python-version: "3.13"
       - run: pip install -e .
       - run: rhd collect
+        if: github.event.inputs.collect != 'false'
       - run: rhd render --out site
       - uses: actions/upload-pages-artifact@v3
         with:
