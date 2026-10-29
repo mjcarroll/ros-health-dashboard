@@ -1,0 +1,6 @@
+# Each [[collectors]] entry enables one collector. `type` selects the
+# implementation in rhd.collectors; remaining keys are passed as its options.
+
+[[collectors]]
+type = "rosdistro"
+repo = "ros/rosdistro"

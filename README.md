@@ -19,3 +19,17 @@ Top-line health dashboard for the ROS 2 project. It answers "is the project heal
 ## Status
 
 Not started. Tracking: https://github.com/mjcarroll/ros-project-management/issues
+
+## Development
+
+```
+pip install -e '.[dev]' && pytest
+GITHUB_TOKEN=$(gh auth token) rhd collect   # writes ./rhd.db (SQLite) unless D1 env vars are set
+rhd render --out site
+```
+
+Adding a collector: write a class with `name` and `collect() -> list[Observation]`, register it in `src/rhd/collectors/base.py`, enable it in `config.toml`. No schema change is needed.
+
+## Deploy (not done yet)
+
+Create the D1 database, then set Actions secrets `CLOUDFLARE_API_TOKEN` (D1 edit), `CLOUDFLARE_ACCOUNT_ID`, `D1_DATABASE_ID`. The workflow currently uploads the rendered site as an artifact; publishing target is undecided. The D1 REST calls in `store.py` have not been exercised against a real database.
