@@ -11,6 +11,7 @@ behind them.
 import html
 import re
 import urllib.request
+from datetime import datetime
 
 from ..jenkins import Jenkins
 from ..models import FailureSnapshot, Observation, PkgFailure
@@ -24,6 +25,15 @@ COLOR = {
 def fetch(url: str) -> str:
     with urllib.request.urlopen(url, timeout=120) as resp:
         return resp.read().decode("utf-8", "replace")
+
+
+def page_time(page: str) -> float | None:
+    """When the buildfarm generated this status page (unix seconds)."""
+    m = re.search(r'moment\("(\d+(?:\.\d+)?)",\s*"X"\)', page)
+    if m:
+        return float(m.group(1))
+    m = re.search(r"<title>[^<]*?(\d{4}-\d\d-\d\d \d\d:\d\d:\d\d [+-]\d{4})</title>", page)
+    return datetime.strptime(m.group(1), "%Y-%m-%d %H:%M:%S %z").timestamp() if m else None
 
 
 def parse(page: str) -> tuple[list[tuple[str, str]], list[str], list[dict]]:
@@ -83,11 +93,16 @@ class RepoStatusCollector:
         }
 
     def collect(self):
-        columns, templates, packages = parse(self.page_fetch(self.url))
+        page = self.page_fetch(self.url)
+        columns, templates, packages = parse(page)
         if not columns or len(templates) != len(columns) or not packages:
             raise RuntimeError(f"unexpected status page layout at {self.url}")
 
         obs, failures = [], []
+        generated = page_time(page)
+        if generated is not None:  # page-level, so no platform column
+            obs.append(Observation("repo_status", "page_generated_ts", generated,
+                                   {"distro": self.distro, "column": ""}))
         for idx, (short, title) in enumerate(columns):
             results = self._job_results(templates[idx])
             total = unbuilt = failed = 0

@@ -6,11 +6,11 @@ from rhd.models import FailureSnapshot, Observation, PkgFailure
 from rhd.render import render
 from rhd.store import SqliteStore, statements
 
-PAGE = """<html><head><script>
+PAGE = """<html><head><title>ROS packages for X - 2026-10-29 05:38:04 -0800</title><script>
 window.job_url_templates = [
   'https://build.example/view/Xsrc/job/Xsrc__{pkg}__source',
   'https://build.example/view/Xbin/job/Xbin__{pkg}__binary',
-];</script></head><body><table><thead><tr>
+];</script></head><body><script>window.body_ready_with_age(moment.duration(moment() - moment("1793281084.6251733", "X")));</script><table><thead><tr>
 <th class="sortable"><div>Name</div></th><th class="sortable"><div>Repo</div></th>
 <th class="sortable"><div>Version</div></th><th class="sortable"><div>Status</div></th>
 <th class="sortable"><div>Maintainer</div></th>
@@ -100,3 +100,29 @@ def test_render_package_section(tmp_path):
     assert "Package build status" in text
     assert 'href="https://build.example/view/Xbin/job/Xbin__failed_pkg__binary"' in text
     assert "2 unbuilt packages" in text and "1 failing" in text
+
+
+def test_page_generation_time_is_recorded():
+    from rhd.collectors.repo_status import page_time
+
+    assert page_time(PAGE % ROWS) == 1793281084.6251733
+    # falls back to the title when the epoch is missing (05:38:04 -0800 is 13:38:04 UTC)
+    no_epoch = (PAGE % ROWS).replace('moment("1793281084.6251733", "X")', "moment()")
+    assert page_time(no_epoch) == 1793281084.0
+    assert page_time("<html></html>") is None
+
+    obs = [o for o in collector().collect() if isinstance(o, Observation) and o.metric == "page_generated_ts"]
+    assert [(o.labels, o.value) for o in obs] == [({"distro": "x", "column": ""}, 1793281084.6251733)]
+
+
+def test_render_shows_page_time_and_flags_old_pages(tmp_path):
+    store = SqliteStore(str(tmp_path / "t.db"))
+    now = int(time.time())
+    for generated, expect_stale in [(now - 3600, False), (now - 8 * 3600, True)]:
+        store = SqliteStore(str(tmp_path / f"{expect_stale}.db"))
+        store.write(now, [o for o in collector().collect() if isinstance(o, Observation)
+                          and o.metric != "page_generated_ts"])
+        store.write(now, [Observation("repo_status", "page_generated_ts", generated, {"distro": "x", "column": ""})])
+        text = render(store, str(tmp_path / "site")).read_text()
+        assert "Status page last generated" in text
+        assert ("stale" in text.split("Status page last generated")[1].split("</p>")[0]) == expect_stale

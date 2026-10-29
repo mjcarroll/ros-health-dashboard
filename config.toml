@@ -13,6 +13,15 @@ user_env = "JENKINS_CI_USER"
 token_env = "JENKINS_CI_TOKEN"
 group = "nightly"
 match = "^nightly_"
+# Look back only a couple of days each run; the matrix fills in as hourly runs accumulate.
+days = 2
+history = 6
+classify_console = true
+# Failing-test details; build.ros2.org puts test reports behind a bot challenge, so only here.
+tests = true
+# Only last night's builds are fetched, a few at a time; history builds up run over run.
+test_days = 1
+max_test_fetches = 20
 
 # The Rci/Lci/Kci/Jci/Hci views are the per-distro ROS CI jobs.
 [[collectors]]
@@ -23,6 +32,8 @@ user_env = "JENKINS_BUILD_USER"
 token_env = "JENKINS_BUILD_TOKEN"
 views = ["Rci", "Lci", "Kci", "Jci", "Hci"]
 match = "nightly"
+days = 2
+history = 6
 
 # Package build status per distro (repo.ros2.org status pages + Jenkins job colours).
 [[collectors]]
@@ -44,3 +55,10 @@ distro = "jazzy"
 [[collectors]]
 type = "repo_status"
 distro = "humble"
+
+# Alert thresholds (all optional; these are the defaults). Alerts show as banners on the page.
+[alerts]
+rosdistro_days_since_merge_warn = 1.0
+rosdistro_days_since_merge_bad = 3.0
+nightly_consecutive_failures_warn = 2
+nightly_consecutive_failures_bad = 4

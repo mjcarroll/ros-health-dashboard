@@ -7,8 +7,32 @@ from .collectors import build_collectors
 from .failures import reconcile
 from .models import Build, FailureSnapshot
 from .store import statements
+from .alerts import Thresholds, evaluate
 from .render import render
 from .store import open_store
+
+
+RETENTION_DAYS = 45   # builds and their test failures
+HISTORY_DAYS = 120    # observations and resolved package failures
+
+
+def prune(store, ts: int) -> None:
+    recent, old = ts - RETENTION_DAYS * 86400, ts - HISTORY_DAYS * 86400
+    store.execute([
+        ("DELETE FROM build WHERE ts < ?", [recent]),
+        ("DELETE FROM test_failure WHERE ts < ?", [recent]),
+        ("DELETE FROM test_fetch WHERE ts < ?", [recent]),
+        ("DELETE FROM observation WHERE ts < ?", [old]),
+        ("DELETE FROM pkg_failure WHERE resolved IS NOT NULL AND resolved < ?", [old]),
+    ])
+
+
+def load_config(path: str) -> dict:
+    try:
+        with open(path, "rb") as f:
+            return tomllib.load(f)
+    except FileNotFoundError:
+        return {}
 
 
 def unchanged_filtered(store, records):
@@ -29,14 +53,15 @@ def unchanged_filtered(store, records):
 
 
 def collect(config: str, db: str) -> int:
-    with open(config, "rb") as f:
-        entries = tomllib.load(f).get("collectors", [])
+    entries = load_config(config).get("collectors", [])
     store = open_store(db)
     ts = int(time.time())
     failed = 0
     # One broken source must not stop the others from being recorded.
     for collector in build_collectors(entries):
         try:
+            if hasattr(collector, "bind"):
+                collector.bind(store)
             observations = collector.collect()
         except Exception as e:
             print(f"{collector.name}: FAILED: {e}", file=sys.stderr)
@@ -48,6 +73,7 @@ def collect(config: str, db: str) -> int:
             stmts += reconcile(store, ts, snap)
         store.execute(stmts)
         print(f"{collector.name}: fetched {len(observations)}, wrote {len(stmts)}")
+    prune(store, ts)
     return 1 if failed else 0
 
 
@@ -59,11 +85,22 @@ def main(argv: list[str] | None = None) -> int:
     c.add_argument("--config", default="config.toml")
     r = sub.add_parser("render")
     r.add_argument("--out", default="site")
+    r.add_argument("--config", default="config.toml")
+    a = sub.add_parser("alerts", help="print firing alerts; exit 2 if any are 'bad'")
+    a.add_argument("--config", default="config.toml")
     args = p.parse_args(argv)
 
     if args.cmd == "collect":
         return collect(args.config, args.db)
-    print(render(open_store(args.db), args.out))
+    thresholds = Thresholds.from_config(load_config(args.config).get("alerts"))
+    store = open_store(args.db)
+    if args.cmd == "alerts":
+        found = evaluate(store, time.time(), thresholds)
+        for a in found:
+            print(f"[{a.severity}] {a.tab}: {a.title}" + (f" ({a.detail})" if a.detail else ""))
+        print(f"{len(found)} alert(s)")
+        return 2 if any(a.severity == "bad" for a in found) else 0
+    print(render(store, args.out, thresholds))
     return 0
 
 

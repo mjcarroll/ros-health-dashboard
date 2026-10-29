@@ -64,3 +64,28 @@ class FailureSnapshot:
 
     scope: str
     failures: list[PkgFailure]
+
+
+@dataclass(frozen=True)
+class TestFailures:
+    """The failing tests of one build. An empty `cases` still records that the report was read."""
+
+    __test__ = False  # not a pytest class
+
+    server: str
+    job: str
+    number: int
+    ts: int
+    cases: list[tuple[str, str, int | None, int | None]]  # (class, name, age, since)
+
+
+@dataclass(frozen=True)
+class BuildClass:
+    """Classification of a FAILURE build: infrastructure vs. a real failure."""
+
+    server: str
+    job: str
+    number: int
+    ts: int
+    kind: str  # 'infra' | 'code' | 'unknown'
+    reason: str = ""

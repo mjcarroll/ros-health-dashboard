@@ -13,5 +13,5 @@ def test_store_roundtrip_and_render(tmp_path):
     store.write(now, [Observation("jenkins", "failed", 2, {"job": "nightly_linux"})])
     page = render(store, str(tmp_path / "site"))
     text = page.read_text()
-    assert "rosdistro" in text and "open_prs" in text and "nightly_linux" in text
+    assert "rosdistro" in text and "open PRs" in text and "nightly_linux" in text
     assert "<polyline" in text

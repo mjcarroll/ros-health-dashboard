@@ -5,7 +5,7 @@ import urllib.request
 from pathlib import Path
 from typing import Protocol
 
-from .models import Build, Observation
+from .models import Build, BuildClass, Observation, TestFailures
 
 SCHEMA_DIR = Path(__file__).resolve().parents[2] / "schema"
 
@@ -16,6 +16,14 @@ INSERT_OBSERVATION = (
 INSERT_BUILD = (
     "INSERT OR REPLACE INTO build (server, grp, job, number, ts, result, duration_s, "
     "fail, skip, total, url) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+)
+INSERT_TEST_FETCH = "INSERT OR REPLACE INTO test_fetch (server, job, number, ts) VALUES (?, ?, ?, ?)"
+INSERT_TEST_FAILURE = (
+    "INSERT OR REPLACE INTO test_failure (server, job, number, ts, class, name, age, since) "
+    "VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+)
+INSERT_BUILD_CLASS = (
+    "INSERT OR REPLACE INTO build_class (server, job, number, ts, kind, reason) VALUES (?, ?, ?, ?, ?, ?)"
 )
 
 
@@ -32,7 +40,13 @@ def _migrations() -> list[str]:
 def statements(ts: int, records: list) -> list[tuple[str, list]]:
     out = []
     for r in records:
-        if isinstance(r, Build):
+        if isinstance(r, TestFailures):
+            out.append((INSERT_TEST_FETCH, [r.server, r.job, r.number, r.ts]))
+            out += [(INSERT_TEST_FAILURE, [r.server, r.job, r.number, r.ts, cls, name, age, since])
+                    for cls, name, age, since in r.cases]
+        elif isinstance(r, BuildClass):
+            out.append((INSERT_BUILD_CLASS, [r.server, r.job, r.number, r.ts, r.kind, r.reason]))
+        elif isinstance(r, Build):
             out.append((INSERT_BUILD, [r.server, r.grp, r.job, r.number, r.ts, r.result,
                                        r.duration_s, r.fail, r.skip, r.total, r.url]))
         else:
