@@ -18,7 +18,7 @@ Top-line health dashboard for the ROS 2 project. It answers "is the project heal
 
 ## Status
 
-Not started. Tracking: https://github.com/mjcarroll/ros-project-management/issues
+Scaffold and rosdistro collector done; Jenkins collectors and deployment pending. Tracking: https://github.com/mjcarroll/ros-project-management/issues/42
 
 ## Development
 
