@@ -42,6 +42,7 @@ class Alert:
     title: str
     detail: str = ""
     url: str | None = None
+    key: str = ""   # stable identity for dismissal; the title often contains changing numbers
 
 
 def _level(value, warn, bad, higher_is_worse=True):
@@ -61,14 +62,15 @@ def _rosdistro(store, now, t) -> list[Alert]:
     if days is not None and (lvl := _level(days, t.rosdistro_days_since_merge_warn,
                                            t.rosdistro_days_since_merge_bad)):
         out.append(Alert(lvl, "rosdistro", "rosdistro has stopped merging",
-                         f"last merge {days:.1f} days ago", "https://github.com/ros/rosdistro/pulls?q=is%3Amerged"))
+                         f"last merge {days:.1f} days ago", "https://github.com/ros/rosdistro/pulls?q=is%3Amerged",
+                         "rosdistro:stopped"))
     if "merged_7d" in latest and latest.get("merged_30d"):
         weekly = latest["merged_30d"] * 7 / 30
         ratio = latest["merged_7d"] / weekly
         if lvl := _level(ratio, t.rosdistro_merge_rate_warn, t.rosdistro_merge_rate_bad, False):
             out.append(Alert(lvl, "rosdistro", "rosdistro merge rate is down",
                              f"{latest['merged_7d']:.0f} merged in 7 days vs a {weekly:.0f}/week average",
-                             "https://github.com/ros/rosdistro/pulls?q=is%3Amerged"))
+                             "https://github.com/ros/rosdistro/pulls?q=is%3Amerged", "rosdistro:rate"))
     return out
 
 
@@ -92,7 +94,8 @@ def _nightlies(store, now, t) -> list[Alert]:
                 break
             streak += 1
         if lvl := _level(streak, t.nightly_consecutive_failures_warn, t.nightly_consecutive_failures_bad):
-            out.append(Alert(lvl, tab, f"{job} failed {streak} builds in a row", server, builds[-1]["url"]))
+            out.append(Alert(lvl, tab, f"{job} failed {streak} builds in a row", server, builds[-1]["url"],
+                             f"streak:{server}:{job}"))
 
         if len(builds) >= 3:
             recent = [b["ts"] for b in builds[-10:]]
@@ -101,7 +104,7 @@ def _nightlies(store, now, t) -> list[Alert]:
             silent = now - builds[-1]["ts"]
             if silent > allowed:
                 out.append(Alert("warn", tab, f"{job} has not run for {silent / 86400:.1f} days",
-                                 f"usually every {gap / 86400:.1f} days", job_url))
+                                 f"usually every {gap / 86400:.1f} days", job_url, f"stale:{server}:{job}"))
     return out
 
 
@@ -116,7 +119,8 @@ def _packages(store, now, t) -> list[Alert]:
         if oldest is None or now - oldest < 86400:
             continue
         if lvl := _level(r["n"], t.packages_new_failures_24h_warn, t.packages_new_failures_24h_bad):
-            out.append(Alert(lvl, r["distro"], f"{r['n']} packages started failing in {r['distro']} in the last 24h"))
+            out.append(Alert(lvl, r["distro"], f"{r['n']} packages started failing in {r['distro']} in the last 24h",
+                             key=f"pkgs:{r['distro']}"))
     return out
 
 

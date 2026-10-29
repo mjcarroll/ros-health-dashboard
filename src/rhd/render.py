@@ -36,7 +36,7 @@ PAGE = """<!doctype html>
     --ok-bg:#12261e; --ok:#3fb950; --warn-bg:#272115; --warn:#d29922; --bad-bg:#2d1215; --bad:#f85149;
     --off-bg:#21262d; --off:#8b949e; --run-bg:#0c2d6b; --run:#58a6ff; --infra-bg:#261a3a; --infra:#a371f7; }
 }
-body { font:15px system-ui,sans-serif; color:var(--fg); background:var(--bg); max-width:70rem; margin:2rem auto; padding:0 1rem; }
+body { font:15px system-ui,sans-serif; color:var(--fg); background:var(--bg); max-width:90rem; margin:2rem auto; padding:0 1rem; }
 h1 { margin-bottom:.25rem; } h2 { margin-top:1.5rem; } h3 { margin-bottom:.4rem; }
 table { border-collapse:collapse; }
 td { padding:.4rem .5rem; border-bottom:1px solid var(--rule); }
@@ -70,7 +70,22 @@ details { margin:.5rem 0 1rem; } summary { cursor:pointer; color:var(--muted); }
 table.pkgs td { padding:.15rem .5rem; font-size:.85em; }
 table.pkgs a { color:inherit; }
 .tag { padding:.05rem .35rem; border-radius:4px; font-size:.85em; }
-.alerts { margin:1rem 0; padding:0; list-style:none; }
+.layout { display:grid; grid-template-columns:minmax(0,1fr); gap:1.5rem; }
+.layout > aside { order:-1; }
+@media (min-width:72rem) {
+  .layout { grid-template-columns:minmax(0,1fr) 19rem; }
+  .layout > aside { order:0; position:sticky; top:1rem; align-self:start; max-height:calc(100vh - 2rem); overflow:auto; }
+}
+aside.side { border:1px solid var(--rule); border-radius:8px; padding:.75rem; font-size:.9em; }
+aside.side h2 { margin:0 0 .5rem; font-size:1em; }
+aside.side .toggle { background:none; border:0; padding:0; color:var(--muted); cursor:pointer; text-decoration:underline; font:inherit; font-size:.85em; }
+.alerts li { position:relative; padding-right:1.8rem !important; }
+.alerts li.dismissed { display:none; }
+.show-dismissed .alerts li.dismissed { display:block; opacity:.55; }
+.show-dismissed .alerts li.dismissed a:first-of-type { text-decoration:line-through; }
+button.dismiss { position:absolute; top:.2rem; right:.3rem; background:none; border:0; color:inherit; cursor:pointer; font-size:1.1em; line-height:1; opacity:.7; }
+button.dismiss:hover { opacity:1; }
+.alerts { margin:.5rem 0; padding:0; list-style:none; }
 .alerts li { padding:.35rem .6rem; margin:.25rem 0; border-radius:4px; }
 .alerts li.bad { background:var(--bad-bg); color:var(--bad); } .alerts li.warn { background:var(--warn-bg); color:var(--warn); }
 .alerts a { color:inherit; } .alerts .muted { color:inherit; opacity:.8; }
@@ -93,9 +108,13 @@ table.facts a { color:var(--fg); }
 </style>
 <h1>ROS 2 health</h1>
 <p class="muted">Updated %UPDATED% UTC.</p>
-%ALERTS%
+<div class="layout">
+<main>
 <nav class="tabs" role="tablist">%TABS%</nav>
 %PANELS%
+</main>
+%ALERTS%
+</div>
 <script>
 function show() {
   var panels = [].slice.call(document.querySelectorAll('.panel'));
@@ -107,6 +126,47 @@ function show() {
 }
 addEventListener('hashchange', show);
 show();
+
+// Alert dismissal lives in this browser only. A dismissed alert stays hidden until it gets worse
+// (warn -> bad; bad -> warn stays hidden); dismissals of alerts that have resolved are forgotten, so a recurrence shows again.
+(function () {
+  var side = document.getElementById('alerts');
+  if (!side) return;
+  var RANK = { warn: 1, bad: 2 }, KEY = 'rhd.dismissed', items = [].slice.call(side.querySelectorAll('li[data-key]'));
+  function load() { try { return JSON.parse(localStorage.getItem(KEY) || '{}'); } catch (e) { return {}; } }
+  function save(d) { try { localStorage.setItem(KEY, JSON.stringify(d)); } catch (e) {} }
+  var live = {}; items.forEach(function (li) { live[li.dataset.key] = 1; });
+  var d = load(), pruned = false;
+  Object.keys(d).forEach(function (k) { if (!live[k]) { delete d[k]; pruned = true; } });
+  if (pruned) save(d);
+  function apply() {
+    var d = load(), hidden = 0, visible = 0;
+    items.forEach(function (li) {
+      var off = !!d[li.dataset.key] && RANK[d[li.dataset.key]] >= RANK[li.dataset.sev];
+      li.classList.toggle('dismissed', off);
+      li.querySelector('button.dismiss').textContent = off ? '↺' : '×';
+      li.querySelector('button.dismiss').title = off ? 'Restore' : 'Dismiss until it gets worse';
+      off ? hidden++ : visible++;
+    });
+    side.querySelector('.count').textContent = visible;
+    var t = side.querySelector('.toggle');
+    t.hidden = hidden === 0;
+    t.textContent = side.classList.contains('show-dismissed') ? 'hide ' + hidden + ' dismissed' : 'show ' + hidden + ' dismissed';
+    side.querySelector('.none').hidden = visible !== 0;
+  }
+  side.addEventListener('click', function (e) {
+    var b = e.target.closest('button');
+    if (!b) return;
+    if (b.classList.contains('toggle')) side.classList.toggle('show-dismissed');
+    else if (b.classList.contains('dismiss')) {
+      var li = b.closest('li'), d = load();
+      if (li.classList.contains('dismissed')) delete d[li.dataset.key]; else d[li.dataset.key] = li.dataset.sev;
+      save(d);
+    }
+    apply();
+  });
+  apply();
+})();
 </script>
 """
 
@@ -272,18 +332,22 @@ def _generic(rows: list[dict]) -> str:
     return f"<table>{''.join(trs)}</table>"
 
 
-def _alert_list(alerts, link_tab: bool) -> str:
-    if not alerts:
-        return ""
+def _alerts_aside(alerts) -> str:
     items = []
     for a in alerts:
         title = html.escape(a.title)
         if a.url:
             title = f'<a href="{html.escape(a.url)}">{title}</a>'
-        where = f' <a class="muted" href="#{a.tab}">[{html.escape(a.tab)}]</a>' if link_tab else ""
         detail = f' <span class="muted">{html.escape(a.detail)}</span>' if a.detail else ""
-        items.append(f'<li class="{a.severity}"><b>{a.severity.upper()}</b> {title}{detail}{where}</li>')
-    return f'<ul class="alerts">{"".join(items)}</ul>'
+        key = html.escape(a.key or a.title, quote=True)
+        items.append(
+            f'<li class="{a.severity}" data-key="{key}" data-sev="{a.severity}"><b>{a.severity.upper()}</b> '
+            f'{title}{detail} <a class="muted" href="#{a.tab}">[{html.escape(a.tab)}]</a>'
+            '<button class="dismiss" type="button" title="Dismiss until it gets worse">×</button></li>')
+    return (f'<aside class="side" id="alerts"><h2>Alerts (<span class="count">{len(alerts)}</span>)</h2>'
+            f'<p class="ok-note none"{" hidden" if alerts else ""}>No alerts firing.</p>'
+            f'<ul class="alerts">{"".join(items)}</ul>'
+            '<button class="toggle" type="button" hidden></button></aside>')
 
 
 def _test_url(build_url: str, cls: str, name: str) -> str:
@@ -440,8 +504,7 @@ def render(store: Store, out_dir: str, thresholds: Thresholds | None = None) -> 
     jobs = matrices.pop((CI_SERVER, "nightly"), None)
     if jobs:
         table, failing = _matrix(jobs, now)
-        tabs.append(_tab("ci", CI_SERVER, _alert_list([a for a in alerts if a.tab == "ci"], False)
-                         + LEGEND + table + _tests(store, CI_SERVER, now), failing))
+        tabs.append(_tab("ci", CI_SERVER, LEGEND + table + _tests(store, CI_SERVER, now), failing))
 
     for distro, view, label in DISTROS:
         jobs = matrices.pop((BUILD_SERVER, view), None)
@@ -450,7 +513,6 @@ def render(store: Store, out_dir: str, thresholds: Thresholds | None = None) -> 
             table, failing = _matrix(jobs, now)
             content += f"<h3>{view} nightly jobs on {BUILD_SERVER}</h3>" + LEGEND + table
         content += _packages(distro, series, failures.get(distro, []), now)
-        content = _alert_list([a for a in alerts if a.tab == distro], False) + content if content else content
         if content:
             tabs.append(_tab(distro, f"{label} ({view})", content, failing))
 
@@ -472,12 +534,12 @@ def render(store: Store, out_dir: str, thresholds: Thresholds | None = None) -> 
     for source, rows in sorted(by_source.items()):
         body = (_rosdistro(rows, now, thresholds) if source == "rosdistro"
                 else f'<p class="muted">Last {WINDOW_DAYS} days.</p>' + _generic(rows))
-        tabs.append(_tab(source, source, _alert_list([a for a in alerts if a.tab == source], False) + body))
+        tabs.append(_tab(source, source, body))
 
     page = PAGE.replace("%UPDATED%", time.strftime("%Y-%m-%d %H:%M", time.gmtime())).replace(
         "%TABS%", "".join(t[0] for t in tabs)).replace(
         "%PANELS%", "".join(t[1] for t in tabs) or "<p>No data yet.</p>").replace(
-        "%ALERTS%", _alert_list(alerts, True) or '<p class="ok-note">No alerts firing.</p>')
+        "%ALERTS%", _alerts_aside(alerts))
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
     path = out / "index.html"

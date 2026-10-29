@@ -110,3 +110,42 @@ def test_infra_failure_does_not_break_or_extend_a_streak(tmp_path):
     assert alerts_for(["FAILURE", "FAILURE", "SUCCESS"], []) == []
     # all-infra failures never alert
     assert alerts_for(["FAILURE"] * 4, [1, 2, 3, 4]) == []
+
+
+def alerting_page(tmp_path, days_since_merge=5.0):
+    obs = [Observation("rosdistro", "days_since_last_merge", days_since_merge)]
+    builds = [b("ci.ros2.org", "nightly", "n", i, 5 - i, "FAILURE") for i in range(1, 5)]
+    return page(tmp_path, builds, obs)
+
+
+def test_alerts_live_in_a_sidebar_with_stable_keys(tmp_path):
+    text = alerting_page(tmp_path)
+    aside = text[text.index('<aside class="side" id="alerts">'):text.index("</aside>")]
+    assert 'data-key="rosdistro:stopped"' in aside and 'data-sev="bad"' in aside
+    assert 'data-key="streak:ci.ros2.org:n"' in aside      # not the title: it contains the changing count
+    assert 'class="dismiss"' in aside and "Alerts (<span class=\"count\">2</span>)" in aside
+    assert "none\" hidden" in aside                          # the 'no alerts' note is hidden while some fire
+    # one list only: the old per-tab and top banners are gone
+    assert text.count('<ul class="alerts">') == 1
+    assert text.index("<main>") < text.index('id="alerts"') < text.index("</div>\n<script>")
+
+
+def test_no_alerts_shows_the_all_clear(tmp_path):
+    text = page(tmp_path, [b("ci.ros2.org", "nightly", "n", 1, 0.5)], [Observation("rosdistro", "days_since_last_merge", 0.1)])
+    aside = text[text.index('<aside class="side"'):text.index("</aside>")]
+    assert "No alerts firing." in aside and "none\" hidden" not in aside and "<li" not in aside
+
+
+def test_dismissal_script_is_valid_javascript(tmp_path):
+    import shutil
+    import subprocess
+
+    text = alerting_page(tmp_path)
+    scripts = re.findall(r"<script>(.*?)</script>", text, re.S)
+    assert any("rhd.dismissed" in s for s in scripts)
+    node = shutil.which("node")
+    if node:
+        for i, src in enumerate(scripts):
+            f = tmp_path / f"s{i}.js"
+            f.write_text(src)
+            assert subprocess.run([node, "--check", str(f)], capture_output=True).returncode == 0, src[:80]
