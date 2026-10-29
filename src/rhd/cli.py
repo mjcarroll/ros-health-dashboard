@@ -4,7 +4,9 @@ import time
 import tomllib
 
 from .collectors import build_collectors
-from .models import Build
+from .failures import reconcile
+from .models import Build, FailureSnapshot
+from .store import statements
 from .render import render
 from .store import open_store
 
@@ -41,8 +43,11 @@ def collect(config: str, db: str) -> int:
             failed += 1
             continue
         records = unchanged_filtered(store, observations)
-        store.write(ts, records)
-        print(f"{collector.name}: fetched {len(observations)}, wrote {len(records)}")
+        stmts = statements(ts, [r for r in records if not isinstance(r, FailureSnapshot)])
+        for snap in (r for r in records if isinstance(r, FailureSnapshot)):
+            stmts += reconcile(store, ts, snap)
+        store.execute(stmts)
+        print(f"{collector.name}: fetched {len(observations)}, wrote {len(stmts)}")
     return 1 if failed else 0
 
 

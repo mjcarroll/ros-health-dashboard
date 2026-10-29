@@ -20,7 +20,8 @@ INSERT_BUILD = (
 
 
 class Store(Protocol):
-    def write(self, ts: int, records: list[Observation | Build]) -> None: ...
+    def execute(self, stmts: list[tuple[str, list]]) -> None: ...
+    def write(self, ts: int, records: list) -> None: ...
     def query(self, sql: str, params: list | None = None) -> list[dict]: ...
 
 
@@ -28,7 +29,7 @@ def _migrations() -> list[str]:
     return [p.read_text() for p in sorted(SCHEMA_DIR.glob("*.sql"))]
 
 
-def statements(ts: int, records: list[Observation | Build]) -> list[tuple[str, list]]:
+def statements(ts: int, records: list) -> list[tuple[str, list]]:
     out = []
     for r in records:
         if isinstance(r, Build):
@@ -46,10 +47,13 @@ class SqliteStore:
         for sql in _migrations():
             self.db.executescript(sql)
 
-    def write(self, ts, records):
-        for sql, params in statements(ts, records):
+    def execute(self, stmts):
+        for sql, params in stmts:
             self.db.execute(sql, params)
         self.db.commit()
+
+    def write(self, ts, records):
+        self.execute(statements(ts, records))
 
     def query(self, sql, params=None):
         return [dict(r) for r in self.db.execute(sql, params or [])]
@@ -79,9 +83,12 @@ class D1Store:
             raise RuntimeError(f"D1 error: {body.get('errors')}")
         return body["result"][0].get("results", [])
 
-    def write(self, ts, records):
-        for sql, params in statements(ts, records):
+    def execute(self, stmts):
+        for sql, params in stmts:
             self._post(sql, params)
+
+    def write(self, ts, records):
+        self.execute(statements(ts, records))
 
     def query(self, sql, params=None):
         return self._post(sql, params or [])

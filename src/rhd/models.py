@@ -36,3 +36,31 @@ class Build:
     def state(self) -> tuple:
         """What can change after a build is first seen (it finishes, tests are reported)."""
         return (self.result, self.duration_s, self.fail, self.skip, self.total)
+
+
+@dataclass(frozen=True)
+class PkgFailure:
+    distro: str
+    col: str
+    pkg: str
+    state: str
+    url: str
+    jenkins: str | None = None
+    version: str | None = None
+
+    @property
+    def key(self) -> tuple[str, str, str]:
+        return (self.distro, self.col, self.pkg)
+
+    @property
+    def detail(self) -> tuple:
+        return (self.state, self.jenkins, self.version, self.url)
+
+
+@dataclass(frozen=True)
+class FailureSnapshot:
+    """Everything failing right now within `scope` (a distro). Anything open in the
+    store for that scope but absent here has been fixed."""
+
+    scope: str
+    failures: list[PkgFailure]

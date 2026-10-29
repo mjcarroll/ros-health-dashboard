@@ -23,3 +23,24 @@ user_env = "JENKINS_BUILD_USER"
 token_env = "JENKINS_BUILD_TOKEN"
 views = ["Rci", "Lci", "Kci", "Jci", "Hci"]
 match = "nightly"
+
+# Package build status per distro (repo.ros2.org status pages + Jenkins job colours).
+[[collectors]]
+type = "repo_status"
+distro = "rolling"
+
+[[collectors]]
+type = "repo_status"
+distro = "lyrical"
+
+[[collectors]]
+type = "repo_status"
+distro = "kilted"
+
+[[collectors]]
+type = "repo_status"
+distro = "jazzy"
+
+[[collectors]]
+type = "repo_status"
+distro = "humble"

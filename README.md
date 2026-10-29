@@ -15,11 +15,13 @@ Top-line health dashboard for the ROS 2 project. It answers "is the project heal
 - **Dashboard**: static site rendered from D1 by the workflow and published to Pages/Cloudflare. No Grafana.
 - **Secrets** (Actions): `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`, optionally a GitHub PAT (the built-in `GITHUB_TOKEN` is enough for public reads of `ros/rosdistro`).
 - Nightly matrix: the `jenkins` collector stores one `build` row per recent build (not per-test data) so the page can draw job × day cells that link back to Jenkins. Needs read-only Jenkins API tokens for both servers (`JENKINS_CI_*`, `JENKINS_BUILD_*`).
+- Package status: the `repo_status` collector (one config entry per distro) parses the repo.ros2.org status pages and joins each platform's Jenkins view colours in one request. A package is *unbuilt* when no repo has its current version; *failing* when its Jenkins job is also red. Counts go in as observations; each unbuilt package is a `pkg_failure` row (written on transitions only) that links to its Jenkins job.
+- The page is tabbed: ci.ros2.org, then Rolling (Rci), then the other distros, then rosdistro. Sections whose jobs do not run daily show only days that had builds.
 - Jenkins collection logic is reused from the `ci-observability` branch of `mjcarroll/ros2` (`export.py`, `buildfarm.py`, `github.py`), copied rather than depended on.
 
 ## Status
 
-Scaffold and rosdistro collector done; Jenkins collectors and deployment pending. Tracking: https://github.com/mjcarroll/ros-project-management/issues/42
+Live: rosdistro queue, nightly matrices (ci.ros2.org and the Rci/Lci/Kci/Jci/Hci views), per-distro package status. Tracking: https://github.com/mjcarroll/ros-project-management/issues/42
 
 ## Development
 
@@ -31,6 +33,6 @@ rhd render --out site
 
 Adding a collector: write a class with `name` and `collect() -> list[Observation]`, register it in `src/rhd/collectors/base.py`, enable it in `config.toml`. No schema change is needed.
 
-## Deploy (not done yet)
+## Deploy
 
 D1 database `ros-health` exists and Actions secrets are set (`CLOUDFLARE_API_TOKEN` D1-edit, `CLOUDFLARE_ACCOUNT_ID`, `D1_DATABASE_ID`) plus `JENKINS_CI_USER/TOKEN` and `JENKINS_BUILD_USER/TOKEN`; schema applied with `wrangler d1 execute ros-health --remote --file schema/0001_init.sql`. the site is deployed to GitHub Pages by the `deploy` job. `D1Store` verified end to end (first CI run wrote 9 rosdistro rows).
