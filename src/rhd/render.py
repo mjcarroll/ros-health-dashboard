@@ -36,7 +36,7 @@ PAGE = """<!doctype html>
     --ok-bg:#12261e; --ok:#3fb950; --warn-bg:#272115; --warn:#d29922; --bad-bg:#2d1215; --bad:#f85149;
     --off-bg:#21262d; --off:#8b949e; --run-bg:#0c2d6b; --run:#58a6ff; --infra-bg:#261a3a; --infra:#a371f7; }
 }
-body { font:15px system-ui,sans-serif; color:var(--fg); background:var(--bg); max-width:90rem; margin:2rem auto; padding:0 1rem; }
+body { font:15px system-ui,sans-serif; color:var(--fg); background:var(--bg); max-width:70rem; margin:2rem auto; padding:0 1rem; }
 h1 { margin-bottom:.25rem; } h2 { margin-top:1.5rem; } h3 { margin-bottom:.4rem; }
 table { border-collapse:collapse; }
 td { padding:.4rem .5rem; border-bottom:1px solid var(--rule); }
@@ -70,13 +70,22 @@ details { margin:.5rem 0 1rem; } summary { cursor:pointer; color:var(--muted); }
 table.pkgs td { padding:.15rem .5rem; font-size:.85em; }
 table.pkgs a { color:inherit; }
 .tag { padding:.05rem .35rem; border-radius:4px; font-size:.85em; }
-.layout { display:grid; grid-template-columns:minmax(0,1fr); gap:1.5rem; }
-.layout > aside { order:-1; }
-@media (min-width:72rem) {
-  .layout { grid-template-columns:minmax(0,1fr) 19rem; }
-  .layout > aside { order:0; position:sticky; top:1rem; align-self:start; max-height:calc(100vh - 2rem); overflow:auto; }
-}
-aside.side { border:1px solid var(--rule); border-radius:8px; padding:.75rem; font-size:.9em; }
+header.top { display:flex; align-items:baseline; justify-content:space-between; gap:1rem; flex-wrap:wrap; }
+header.top h1 { margin:0; }
+#alerts-btn { font:inherit; font-size:.9em; cursor:pointer; padding:.3rem .7rem; border-radius:999px; border:1px solid var(--rule);
+  background:none; color:var(--fg); }
+#alerts-btn .n { font-weight:600; margin-left:.25rem; }
+#alerts-btn.bad { background:var(--bad-bg); color:var(--bad); border-color:var(--bad); }
+#alerts-btn.warn { background:var(--warn-bg); color:var(--warn); border-color:var(--warn); }
+#alerts-btn.none { color:var(--muted); }
+aside.side { position:fixed; top:0; right:0; z-index:20; width:min(26rem,100vw); height:100vh; overflow:auto;
+  box-sizing:border-box; padding:1rem; background:var(--bg); border-left:1px solid var(--rule);
+  box-shadow:-6px 0 18px rgba(0,0,0,.18); font-size:.9em; transform:translateX(105%); transition:transform .18s ease; }
+aside.side.open { transform:none; }
+html:not(.js) aside.side { position:static; transform:none; width:auto; height:auto; box-shadow:none;
+  border:1px solid var(--rule); border-radius:8px; margin:1rem 0; }
+html:not(.js) #alerts-btn, html:not(.js) aside.side .close { display:none; }
+aside.side .close { position:absolute; top:.5rem; right:.6rem; background:none; border:0; color:var(--muted); cursor:pointer; font-size:1.4em; line-height:1; }
 aside.side h2 { margin:0 0 .5rem; font-size:1em; }
 aside.side .toggle { background:none; border:0; padding:0; color:var(--muted); cursor:pointer; text-decoration:underline; font:inherit; font-size:.85em; }
 .alerts li { position:relative; padding-right:1.8rem !important; }
@@ -106,15 +115,11 @@ a.tile.bad { background:var(--bad-bg); border-color:var(--bad); } a.tile.bad .n 
 table.facts { width:100%; max-width:34rem; } table.facts td:first-child { color:var(--muted); }
 table.facts a { color:var(--fg); }
 </style>
-<h1>ROS 2 health</h1>
+<header class="top"><h1>ROS 2 health</h1>%ALERTBTN%</header>
 <p class="muted">Updated %UPDATED% UTC.</p>
-<div class="layout">
-<main>
+%ALERTS%
 <nav class="tabs" role="tablist">%TABS%</nav>
 %PANELS%
-</main>
-%ALERTS%
-</div>
 <script>
 function show() {
   var panels = [].slice.call(document.querySelectorAll('.panel'));
@@ -149,15 +154,26 @@ show();
       off ? hidden++ : visible++;
     });
     side.querySelector('.count').textContent = visible;
+    var btn = document.getElementById('alerts-btn'), worst = 'none';
+    items.forEach(function (li) {
+      if (li.classList.contains('dismissed')) return;
+      if (li.dataset.sev === 'bad') worst = 'bad'; else if (worst === 'none') worst = 'warn';
+    });
+    btn.className = worst; btn.querySelector('.n').textContent = visible;
     var t = side.querySelector('.toggle');
     t.hidden = hidden === 0;
     t.textContent = side.classList.contains('show-dismissed') ? 'hide ' + hidden + ' dismissed' : 'show ' + hidden + ' dismissed';
     side.querySelector('.none').hidden = visible !== 0;
   }
+  var btn = document.getElementById('alerts-btn');
+  function setOpen(open) { side.classList.toggle('open', open); btn.setAttribute('aria-expanded', open); }
+  btn.addEventListener('click', function () { setOpen(!side.classList.contains('open')); });
+  addEventListener('keydown', function (e) { if (e.key === 'Escape') setOpen(false); });
   side.addEventListener('click', function (e) {
     var b = e.target.closest('button');
     if (!b) return;
-    if (b.classList.contains('toggle')) side.classList.toggle('show-dismissed');
+    if (b.classList.contains('close')) setOpen(false);
+    else if (b.classList.contains('toggle')) side.classList.toggle('show-dismissed');
     else if (b.classList.contains('dismiss')) {
       var li = b.closest('li'), d = load();
       if (li.classList.contains('dismissed')) delete d[li.dataset.key]; else d[li.dataset.key] = li.dataset.sev;
@@ -332,6 +348,12 @@ def _generic(rows: list[dict]) -> str:
     return f"<table>{''.join(trs)}</table>"
 
 
+def _alerts_button(alerts) -> str:
+    worst = "bad" if any(a.severity == "bad" for a in alerts) else "warn" if alerts else "none"
+    return (f'<button id="alerts-btn" class="{worst}" type="button" aria-controls="alerts" aria-expanded="false">'
+            f'Alerts <span class="n">{len(alerts)}</span></button>')
+
+
 def _alerts_aside(alerts) -> str:
     items = []
     for a in alerts:
@@ -344,7 +366,8 @@ def _alerts_aside(alerts) -> str:
             f'<li class="{a.severity}" data-key="{key}" data-sev="{a.severity}"><b>{a.severity.upper()}</b> '
             f'{title}{detail} <a class="muted" href="#{a.tab}">[{html.escape(a.tab)}]</a>'
             '<button class="dismiss" type="button" title="Dismiss until it gets worse">×</button></li>')
-    return (f'<aside class="side" id="alerts"><h2>Alerts (<span class="count">{len(alerts)}</span>)</h2>'
+    return (f'<aside class="side" id="alerts" aria-label="Alerts"><button class="close" type="button" '
+            f'aria-label="Close alerts">×</button><h2>Alerts (<span class="count">{len(alerts)}</span>)</h2>'
             f'<p class="ok-note none"{" hidden" if alerts else ""}>No alerts firing.</p>'
             f'<ul class="alerts">{"".join(items)}</ul>'
             '<button class="toggle" type="button" hidden></button></aside>')
@@ -539,7 +562,7 @@ def render(store: Store, out_dir: str, thresholds: Thresholds | None = None) -> 
     page = PAGE.replace("%UPDATED%", time.strftime("%Y-%m-%d %H:%M", time.gmtime())).replace(
         "%TABS%", "".join(t[0] for t in tabs)).replace(
         "%PANELS%", "".join(t[1] for t in tabs) or "<p>No data yet.</p>").replace(
-        "%ALERTS%", _alerts_aside(alerts))
+        "%ALERTS%", _alerts_aside(alerts)).replace("%ALERTBTN%", _alerts_button(alerts))
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
     path = out / "index.html"

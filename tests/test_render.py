@@ -120,14 +120,22 @@ def alerting_page(tmp_path, days_since_merge=5.0):
 
 def test_alerts_live_in_a_sidebar_with_stable_keys(tmp_path):
     text = alerting_page(tmp_path)
-    aside = text[text.index('<aside class="side" id="alerts">'):text.index("</aside>")]
+    aside = text[text.index('<aside class="side" id="alerts"'):text.index("</aside>")]
     assert 'data-key="rosdistro:stopped"' in aside and 'data-sev="bad"' in aside
     assert 'data-key="streak:ci.ros2.org:n"' in aside      # not the title: it contains the changing count
     assert 'class="dismiss"' in aside and "Alerts (<span class=\"count\">2</span>)" in aside
     assert "none\" hidden" in aside                          # the 'no alerts' note is hidden while some fire
     # one list only: the old per-tab and top banners are gone
     assert text.count('<ul class="alerts">') == 1
-    assert text.index("<main>") < text.index('id="alerts"') < text.index("</div>\n<script>")
+
+
+def test_alerts_do_not_take_layout_space(tmp_path):
+    text = alerting_page(tmp_path)
+    css = text[text.index("<style>"):text.index("</style>")]
+    assert ".layout" not in css and 'class="layout"' not in text and "max-width:70rem" in css  # no sidebar column
+    assert "position:fixed" in css.split("aside.side {")[1].split("}")[0]    # a drawer, over the page
+    assert '<button id="alerts-btn" class="bad"' in text and 'aria-controls="alerts"' in text
+    assert 'class="n">2</span>' in text
 
 
 def test_no_alerts_shows_the_all_clear(tmp_path):
