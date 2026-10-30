@@ -61,6 +61,10 @@ distro = "jazzy"
 type = "repo_status"
 distro = "humble"
 
+# Build queue depth per distro on build.ros2.org (one /queue request per run).
+[[collectors]]
+type = "build_queue"
+
 # Alert thresholds (all optional; these are the defaults). Alerts show as banners on the page.
 [alerts]
 rosdistro_days_since_merge_warn = 1.0

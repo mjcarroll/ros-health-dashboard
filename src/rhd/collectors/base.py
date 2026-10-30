@@ -14,6 +14,7 @@ class Collector(Protocol):
 
 def _registry() -> dict[str, type]:
     # Imported lazily so a collector's dependencies load only when enabled.
+    from .build_queue import BuildQueueCollector
     from .github_repo import GithubRepoCollector
     from .jenkins import JenkinsCollector
     from .repo_status import RepoStatusCollector
@@ -24,6 +25,7 @@ def _registry() -> dict[str, type]:
         "github_repo": GithubRepoCollector,
         "jenkins": JenkinsCollector,
         "repo_status": RepoStatusCollector,
+        "build_queue": BuildQueueCollector,
     }
 
 

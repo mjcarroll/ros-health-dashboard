@@ -293,6 +293,31 @@ def _repo_series(store: Store, since: int) -> dict[tuple, list[tuple[int, float]
     return out
 
 
+def _queue_series(store: Store, since: int) -> dict[tuple, list[tuple[int, float]]]:
+    out: dict[tuple, list[tuple[int, float]]] = defaultdict(list)
+    for r in store.query(
+        "SELECT ts, metric, labels, value FROM observation WHERE source = 'build_queue' "
+        "AND ts >= ? ORDER BY ts", [since]):
+        out[(json.loads(r["labels"])["distro"], r["metric"])].append((r["ts"], r["value"]))
+    return out
+
+
+def _build_queue(distro: str, series: dict) -> str:
+    total = series.get((distro, "queue_total"))
+    if not total:
+        return ""
+    last = lambda m: (series.get((distro, m)) or [(0, 0)])[-1][1]
+    oldest = last("queue_oldest_s")
+    when = datetime.fromtimestamp(total[-1][0], timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+    return ("<h3>Build queue</h3>"
+            f'<p class="muted">Jobs queued on {BUILD_SERVER} as of {when}. <b>Waiting</b>: ready, needs a '
+            "free executor. <b>Blocked</b>: waiting for an upstream job, as in a release cascade.</p>"
+            f"<table><tr><td>queued</td><td>{_spark(total)}</td>"
+            f'<td class="v">{_fmt(total[-1][1])}</td>'
+            f'<td class="v">{_fmt(last("queue_buildable"))} waiting, {_fmt(last("queue_blocked"))} blocked</td>'
+            f'<td class="v muted">{"oldest " + _dur(oldest / 86400) if oldest else ""}</td></tr></table>')
+
+
 def _page_age(distro: str, series: dict, now: float) -> str:
     pts = series.get((distro, "", "page_generated_ts"))
     if not pts:
@@ -528,6 +553,7 @@ def render(store: Store, out_dir: str, thresholds: Thresholds | None = None) -> 
     alerts = evaluate(store, now, thresholds)
     matrices = _load_matrix_data(store, now)
     series = _repo_series(store, int(now) - WINDOW_DAYS * 86400)
+    queue = _queue_series(store, int(now) - WINDOW_DAYS * 86400)
     failures: dict[str, list[dict]] = defaultdict(list)
     for f in store.query(
         "SELECT distro, col, pkg, state, jenkins, version, url, first_seen FROM pkg_failure "
@@ -547,6 +573,7 @@ def render(store: Store, out_dir: str, thresholds: Thresholds | None = None) -> 
         if jobs:
             table, failing = _matrix(jobs, now)
             content += f"<h3>{view} nightly jobs on {BUILD_SERVER}</h3>" + LEGEND + table
+        content += _build_queue(distro, queue)
         content += _packages(distro, series, failures.get(distro, []), now)
         if content:
             tabs.append(_tab(distro, f"{label} ({view})", content, failing))
@@ -564,7 +591,7 @@ def render(store: Store, out_dir: str, thresholds: Thresholds | None = None) -> 
     for r in store.query(
         "SELECT ts, source, metric, labels, value FROM observation WHERE ts >= ? "
         "ORDER BY source, metric, labels, ts", [int(now) - WINDOW_DAYS * 86400]):
-        if r["source"] != "repo_status":  # drawn per distro above
+        if r["source"] not in ("repo_status", "build_queue"):  # drawn per distro above
             by_source[r["source"]].append(r)
 
     # rosdistro first, then every other GitHub repo ("owner/name") that is being tracked.
