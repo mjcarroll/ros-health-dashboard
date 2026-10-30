@@ -41,6 +41,8 @@ INFRA_PATTERNS = [
      r"std::bad_alloc|Cannot allocate memory", "out of memory"),
     (r"Cannot connect to the Docker daemon|docker: Error response from daemon", "docker daemon error"),
     (r"Could not resolve host|Temporary failure in name resolution|UnknownHostException", "network/DNS failure"),
+    # ros_buildfarm's create_workspace.py could not clone the sources, so nothing was built or tested.
+    (r"Command '\['vcs', 'import'.*returned non-zero exit status", "source checkout failed (vcs import)"),
 ]
 
 
@@ -92,12 +94,14 @@ class JenkinsCollector:
                 that never got executor time is recognised from the JSON we already fetch)
     classify_days / max_classify   same kind of limits as for test reports
     infra_patterns   extra regexes that mark a console as an infrastructure failure
+    infra_builds     {"job#number": reason} for failures diagnosed by hand, e.g. on build.ros2.org,
+                     whose consoles sit behind a bot challenge and cannot be classified automatically
     """
 
     def __init__(self, label, base_url, user_env, token_env, views=None, group="nightly",
                  match="nightly", days=30, history=40, tests=False, test_days=1,
                  max_test_fetches=20, classify_console=False, classify_days=1, max_classify=10,
-                 infra_patterns=(), client=None):
+                 infra_patterns=(), infra_builds=None, client=None):
         self.name = f"jenkins:{label}"
         self.label = label
         self.views = views
@@ -112,6 +116,7 @@ class JenkinsCollector:
         self.patterns = [(re.compile(p), r) for p, r in INFRA_PATTERNS] + [
             (re.compile(p), "matched a custom infra pattern") for p in infra_patterns]
         self.classified: set[tuple] = set()
+        self.infra_builds = dict(infra_builds or {})
 
     def bind(self, store) -> None:
         """Learn which builds already have their test report stored."""
@@ -175,6 +180,9 @@ class JenkinsCollector:
                     result=b["result"] or "RUNNING", duration_s=b["duration"] // 1000,
                     url=b["url"], fail=fail, skip=skip, total=total,
                 ))
+        # Hand-diagnosed builds come last so they win over any automatic classification.
+        classes += [BuildClass(b.server, b.job, b.number, b.ts, "infra", reason) for b in builds
+                    if (reason := self.infra_builds.get(f"{b.job}#{b.number}"))]
         return builds + classes + self._classify(builds, classes) + self._collect_tests(builds)
 
     def _classify(self, builds: list[Build], known: list[BuildClass]) -> list[BuildClass]:

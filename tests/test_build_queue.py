@@ -46,6 +46,7 @@ def test_render_queue_section_in_distro_tab(tmp_path):
     for ts in (now - 3600, now):
         store.write(ts, obs)
     text = render(store, str(tmp_path / "site")).read_text()
-    assert "Build queue" in text and "1 waiting, 1 blocked" in text and "oldest 1 h" in text
+    assert "Build queue" in text and "blocked on upstream" in text and "oldest wait" in text and "1 h" in text
+    assert text.count("<svg") >= 4  # one sparkline per queue metric
     assert 'href="#build_queue"' not in text  # not duplicated as a generic tab
     assert 'id="rolling"' in text

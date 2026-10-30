@@ -39,6 +39,10 @@ views = ["Rci", "Lci", "Kci", "Jci", "Hci"]
 match = "nightly"
 days = 2
 history = 6
+# Failures diagnosed by hand ("job#number" = reason). build.ros2.org consoles are behind a bot
+# challenge, so its infra failures cannot be recognised from the console automatically.
+[collectors.infra_builds]
+"Rci__nightly-extra-rmw-release_ubuntu_resolute_amd64#186" = "source checkout failed (vcs import)"
 
 # Package build status per distro (repo.ros2.org status pages + Jenkins job colours).
 [[collectors]]

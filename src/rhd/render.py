@@ -306,16 +306,20 @@ def _build_queue(distro: str, series: dict) -> str:
     total = series.get((distro, "queue_total"))
     if not total:
         return ""
-    last = lambda m: (series.get((distro, m)) or [(0, 0)])[-1][1]
-    oldest = last("queue_oldest_s")
     when = datetime.fromtimestamp(total[-1][0], timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+    rows = []
+    for metric, label, fmt in (
+            ("queue_total", "queued", _fmt),
+            ("queue_buildable", "waiting for an executor", _fmt),
+            ("queue_blocked", "blocked on upstream", _fmt),
+            ("queue_oldest_s", "oldest wait", lambda v: _dur(v / 86400) if v else "-")):
+        pts = series.get((distro, metric)) or []
+        rows.append(f"<tr><td>{label}</td><td>{_spark(pts)}</td>"
+                    f'<td class="v">{fmt(pts[-1][1]) if pts else "-"}</td></tr>')
     return ("<h3>Build queue</h3>"
-            f'<p class="muted">Jobs queued on {BUILD_SERVER} as of {when}. <b>Waiting</b>: ready, needs a '
-            "free executor. <b>Blocked</b>: waiting for an upstream job, as in a release cascade.</p>"
-            f"<table><tr><td>queued</td><td>{_spark(total)}</td>"
-            f'<td class="v">{_fmt(total[-1][1])}</td>'
-            f'<td class="v">{_fmt(last("queue_buildable"))} waiting, {_fmt(last("queue_blocked"))} blocked</td>'
-            f'<td class="v muted">{"oldest " + _dur(oldest / 86400) if oldest else ""}</td></tr></table>')
+            f'<p class="muted">Jobs queued on {BUILD_SERVER} as of {when}. <b>Blocked</b> jobs wait for an '
+            "upstream job, as in a release cascade.</p>"
+            f"<table>{''.join(rows)}</table>")
 
 
 def _page_age(distro: str, series: dict, now: float) -> str:

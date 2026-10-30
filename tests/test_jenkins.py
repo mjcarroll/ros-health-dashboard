@@ -226,3 +226,21 @@ def test_breadcrumb_shows_in_the_cell_and_the_streak_alert(tmp_path):
     assert "FAILURE #3 · 1h00m · build failed: ros2_transport" in text
     streak = next(a for a in evaluate(store, now) if "in a row" in a.title)
     assert "build failed: ros2_transport" in streak.detail
+
+
+def test_vcs_import_failure_is_infra():
+    tail = ("subprocess.CalledProcessError: Command '['vcs', 'import', '/tmp/ws/src', '--force', '--retry', "
+            "'5', '--input', '/tmp/ws/0.repos']' returned non-zero exit status 1.")
+    c = JenkinsCollector(label="ci.example", base_url="x", user_env="U", token_env="T", match="^nightly_",
+                         classify_console=True, client=failing_job_client({5: tail}))
+    assert classes(c.collect())[5] == ("infra", "source checkout failed (vcs import)")
+
+
+def test_hand_diagnosed_builds_are_infra_without_reading_consoles():
+    client = failing_job_client({})
+    c = JenkinsCollector(label="b", base_url="x", user_env="U", token_env="T", match="^nightly_", client=client,
+                         infra_builds={"nightly_a#4": "source checkout failed", "nightly_a#2": "by hand"})
+    got = classes(c.collect())
+    assert got[4] == ("infra", "source checkout failed")
+    assert got[2] == ("infra", "by hand")  # wins over the automatic no-executor-time class
+    assert 5 not in got and client.calls == []
