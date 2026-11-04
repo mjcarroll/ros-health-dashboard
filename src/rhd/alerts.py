@@ -4,7 +4,7 @@ threshold in config.toml takes effect on the next run without re-collecting anyt
 import statistics
 from dataclasses import dataclass, fields
 
-from .layout import tab_for
+from .layout import DISTROS, tab_for
 
 SEVERITY = {"bad": 0, "warn": 1}
 
@@ -25,6 +25,9 @@ class Thresholds:
     # packages: jobs that turned red recently, per distro.
     packages_new_failures_24h_warn: int = 5
     packages_new_failures_24h_bad: int = 15
+    # collectors: a source that could not be read (e.g. build.ros2.org down), so its data is stale.
+    collector_failing_warn_hours: float = 0.0  # warn from the first failed run
+    collector_failing_bad_hours: float = 12.0
 
     @classmethod
     def from_config(cls, section: dict | None) -> "Thresholds":
@@ -126,7 +129,40 @@ def _packages(store, now, t) -> list[Alert]:
     return out
 
 
+def _collector_tab(name: str) -> str:
+    """The tab whose data a collector feeds (jenkins:<server>, repo_status:<distro>, ...)."""
+    kind, _, arg = name.partition(":")
+    if kind == "repo_status":
+        return arg
+    if kind == "jenkins" and arg == "ci.ros2.org":
+        return "ci"
+    if kind in ("jenkins", "build_queue"):  # build.ros2.org feeds every distro tab
+        return DISTROS[0][0]
+    return "github"
+
+
+def _collectors(store, now, t) -> list[Alert]:
+    out = []
+    for r in store.query(
+        "SELECT json_extract(o.labels, '$.collector') name, o.value ok, o.ts, "
+        "(SELECT MAX(ts) FROM observation p WHERE p.source = 'collector' AND p.metric = 'ok' AND p.labels = o.labels "
+        " AND p.value = 1) last_ok, "
+        "(SELECT MIN(ts) FROM observation p WHERE p.source = 'collector' AND p.metric = 'ok' AND p.labels = o.labels) first_ts "
+        "FROM observation o WHERE o.source = 'collector' AND o.metric = 'ok' AND o.ts = "
+        "(SELECT MAX(ts) FROM observation p WHERE p.source = 'collector' AND p.metric = 'ok' AND p.labels = o.labels)"):
+        if r["ok"]:
+            continue
+        since = r["last_ok"] or r["first_ts"]
+        hours = (now - since) / 3600
+        if lvl := _level(hours, t.collector_failing_warn_hours, t.collector_failing_bad_hours):
+            what = f"no successful run since {hours:.0f}h ago" if r["last_ok"] else "has never succeeded"
+            out.append(Alert(lvl, _collector_tab(r["name"]), f"{r['name']} collector is failing",
+                             f"{what}; data shown is stale", key=f"collector:{r['name']}"))
+    return out
+
+
 def evaluate(store, now: float, thresholds: Thresholds | None = None) -> list[Alert]:
     t = thresholds or Thresholds()
-    alerts = [*_rosdistro(store, now, t), *_nightlies(store, now, t), *_packages(store, now, t)]
+    alerts = [*_rosdistro(store, now, t), *_nightlies(store, now, t), *_packages(store, now, t),
+              *_collectors(store, now, t)]
     return sorted(alerts, key=lambda a: (SEVERITY[a.severity], a.tab, a.title))

@@ -1,11 +1,12 @@
 import argparse
+import os
 import sys
 import time
 import tomllib
 
 from .collectors import build_collectors
 from .failures import reconcile
-from .models import Build, FailureSnapshot
+from .models import Build, FailureSnapshot, Observation
 from .store import statements
 from .alerts import Thresholds, evaluate
 from .render import render
@@ -53,6 +54,10 @@ def unchanged_filtered(store, records):
 
 
 def collect(config: str, db: str, only: list[str] | None = None) -> int:
+    """Run every configured collector. One unreachable source (build.ros2.org down, say) must not
+    stop the others from being recorded or the page from being rendered, so this exits non-zero only
+    when every collector failed. Each collector's outcome is stored as a `collector/ok` observation;
+    alerts turn a run of failures into a "collector failing since ..." alert on the page."""
     entries = load_config(config).get("collectors", [])
     if only:
         entries = [e for e in entries if e["type"] in only]
@@ -60,25 +65,32 @@ def collect(config: str, db: str, only: list[str] | None = None) -> int:
             raise SystemExit(f"no configured collectors of type {only}")
     store = open_store(db)
     ts = int(time.time())
-    failed = 0
-    # One broken source must not stop the others from being recorded.
-    for collector in build_collectors(entries):
+    collectors = build_collectors(entries)
+    failed = []
+    for collector in collectors:
         try:
             if hasattr(collector, "bind"):
                 collector.bind(store)
             observations = collector.collect()
         except Exception as e:
             print(f"{collector.name}: FAILED: {e}", file=sys.stderr)
-            failed += 1
+            failed.append((collector.name, str(e)))
+            store.execute(statements(ts, [Observation("collector", "ok", 0, {"collector": collector.name})]))
             continue
         records = unchanged_filtered(store, observations)
         stmts = statements(ts, [r for r in records if not isinstance(r, FailureSnapshot)])
         for snap in (r for r in records if isinstance(r, FailureSnapshot)):
             stmts += reconcile(store, ts, snap)
+        stmts += statements(ts, [Observation("collector", "ok", 1, {"collector": collector.name})])
         store.execute(stmts)
         print(f"{collector.name}: fetched {len(observations)}, wrote {len(stmts)}")
     prune(store, ts)
-    return 1 if failed else 0
+    if os.environ.get("GITHUB_ACTIONS"):
+        for name, err in failed:
+            print(f"::warning title=collector {name} failed::{err}")
+    if failed:
+        print(f"{len(failed)} of {len(collectors)} collector(s) failed", file=sys.stderr)
+    return 1 if collectors and len(failed) == len(collectors) else 0
 
 
 def main(argv: list[str] | None = None) -> int:

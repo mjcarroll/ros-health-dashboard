@@ -11,6 +11,15 @@ import urllib.request
 MIN_INTERVAL = 0.3
 MAX_ATTEMPTS = 5
 
+# Hosts that exhausted their retries this process, with the last error. Several collectors share a
+# server (build.ros2.org backs the jenkins, repo_status and build_queue collectors); once it is down,
+# the rest fail fast instead of each spending minutes on retries.
+_down: dict[str, str] = {}
+
+
+class HostDown(RuntimeError):
+    pass
+
 
 def quote(path: str) -> str:
     return urllib.parse.quote(path, safe="/:?&=,[]{}.*'")
@@ -48,6 +57,8 @@ class Jenkins:
         return self.text(f"{base}?start={max(0, int(size) - nbytes)}")
 
     def _fetch(self, path: str, method: str = "GET") -> tuple[dict[str, str] | None, str | None]:
+        if self.base in _down:
+            raise HostDown(f"{self.base} is down ({_down[self.base]}); skipped")
         url = self.base + quote(path)
         for attempt in range(MAX_ATTEMPTS):
             wait = MIN_INTERVAL - (time.monotonic() - self._last)
@@ -65,9 +76,12 @@ class Jenkins:
                 if e.code in (429, 500, 502, 503, 504) and attempt < MAX_ATTEMPTS - 1:
                     time.sleep(int(e.headers.get("Retry-After") or 0) or 5 * 2**attempt)
                     continue
+                if e.code in (429, 500, 502, 503, 504):
+                    _down[self.base] = f"HTTP {e.code}"
                 raise
-            except (urllib.error.URLError, TimeoutError, ConnectionError):
+            except (urllib.error.URLError, TimeoutError, ConnectionError) as e:
                 if attempt == MAX_ATTEMPTS - 1:
+                    _down[self.base] = str(getattr(e, "reason", None) or e)
                     raise
                 time.sleep(5 * 2**attempt)
         return None, None
