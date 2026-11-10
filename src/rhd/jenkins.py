@@ -53,7 +53,7 @@ class Jenkins:
         base = f"/job/{job}/{number}/logText/progressiveText"
         size = (self.head(f"{base}?start=0") or {}).get("x-text-size", "")
         if not size.isdigit():
-            return None, None
+            return None
         return self.text(f"{base}?start={max(0, int(size) - nbytes)}")
 
     def _fetch(self, path: str, method: str = "GET") -> tuple[dict[str, str] | None, str | None]:

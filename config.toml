@@ -27,6 +27,9 @@ tests = true
 # Only last night's builds are fetched, a few at a time; history builds up run over run.
 test_days = 1
 max_test_fetches = 20
+# Failures diagnosed by hand ("job#number" = reason); these override an earlier automatic class.
+[collectors.infra_builds]
+"nightly_linux_release#4074" = "apt package download failed (mirror out of sync)"
 
 # The Rci/Lci/Kci/Jci/Hci views are the per-distro ROS CI jobs.
 [[collectors]]

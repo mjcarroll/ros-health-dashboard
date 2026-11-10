@@ -43,6 +43,10 @@ INFRA_PATTERNS = [
     (r"Could not resolve host|Temporary failure in name resolution|UnknownHostException", "network/DNS failure"),
     # ros_buildfarm's create_workspace.py could not clone the sources, so nothing was built or tested.
     (r"Command '\['vcs', 'import'.*returned non-zero exit status", "source checkout failed (vcs import)"),
+    # apt could not download a package (mirror mid-sync 404, hash mismatch, network). A wrong package
+    # name fails earlier with "Unable to locate package", which this does not match.
+    (r"E: Failed to fetch \S+|E: Unable to fetch some archives|Hash Sum mismatch",
+     "apt package download failed (mirror out of sync)"),
 ]
 
 

@@ -236,6 +236,20 @@ def test_vcs_import_failure_is_infra():
     assert classes(c.collect())[5] == ("infra", "source checkout failed (vcs import)")
 
 
+def test_apt_mirror_fetch_failure_is_infra():
+    # nightly_linux_release #4074: the docker image build hit a mirror mid-sync; SMTP noise follows.
+    tail = ("E: Failed to fetch http://security.ubuntu.com/ubuntu/pool/main/p/perl/perl-base_5.40.1-7ubuntu0.4"
+            "_amd64.deb  404  Not Found [IP: 91.189.91.82 80]\nE: Unable to fetch some archives, maybe run apt "
+            "update or try with --fix-missing?\nBuild step 'Execute shell' marked build as failure\n"
+            "at hudson.tasks.MailSender.run(MailSender.java:131)\nFinished: FAILURE")
+    client = failing_job_client({5: tail, 4: "E: Unable to locate package python3-nope", 3: "x", 1: "x"})
+    c = JenkinsCollector(label="ci.example", base_url="x", user_env="U", token_env="T", match="^nightly_",
+                         classify_console=True, client=client)
+    got = classes(c.collect())
+    assert got[5] == ("infra", "apt package download failed (mirror out of sync)")
+    assert got[4][0] == "code"   # a missing package is a real error
+
+
 def test_hand_diagnosed_builds_are_infra_without_reading_consoles():
     client = failing_job_client({})
     c = JenkinsCollector(label="b", base_url="x", user_env="U", token_env="T", match="^nightly_", client=client,
